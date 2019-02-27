@@ -4,9 +4,19 @@ import java.security.KeyPair
 
 import org.scalatest.FlatSpec
 import org.constellation.crypto.KeyUtils._
+import org.constellation.serializer.KryoSerializer
 import org.json4s.JsonAST.JValue
 
 //case class Test(a: EdgeHashType, b: EdgeHashType)
+
+// case class Task[U]
+
+case class FakeTask[T, U](
+  t: T,
+  func: T => U
+                         ) {
+  def run: U = func(t)
+}
 
 class UtilityTest extends FlatSpec {
 
@@ -15,10 +25,14 @@ class UtilityTest extends FlatSpec {
 
     implicit val kp: KeyPair = makeKeyPair()
 
+    val task = FakeTask(5, (x: Int) => x + 1)
 
-    println(Seq(1,2,3,4,5).sortBy{_ != 3})
-    println(Seq(true, false, true, true).sorted)
-    //assert(b3.json.x[Bundle] == b3)
+    val ser = KryoSerializer.serializeAnyRef(task)
+
+    val deser = KryoSerializer.deserializeCast[FakeTask[Any, Any]](ser)
+
+    print(deser.run)
+
   }
 
   "Json messages" should "parse from UI request" in {
