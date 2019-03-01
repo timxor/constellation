@@ -320,7 +320,7 @@ class API(udpAddress: InetSocketAddress)(implicit system: ActorSystem,
           path("send") {
             entity(as[ChannelSendRequest]) { send =>
               onComplete(ChannelMessage.createMessages(send)) { res =>
-                complete(res.getOrElse(ChannelSendResponse("Failed to create messages", Seq())))
+                complete(res.getOrElse(ChannelSendResponse("Failed to create messages", Seq())).json)
               }
             }
           } ~

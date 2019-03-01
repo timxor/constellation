@@ -26,7 +26,7 @@ class E2ETest extends E2E {
   private val schemaStr = SensorData.jsonSchema
   private val testChannelName = "snickelfritz"
   private val totalNumNodes = 3
-  private val n1 = createNode(randomizePorts = false, isGenesisNode = true)
+  private val n1 = createNode(randomizePorts = false, isGenesisNode = false)
   private val nodes = Seq(n1) ++ Seq.tabulate(totalNumNodes - 1)(
     i => createNode(seedHosts = Seq(), randomizePorts = false, portOffset = (i * 2) + 2)
   )
@@ -35,7 +35,7 @@ class E2ETest extends E2E {
   private val sim = new Simulation()
   val testApp = new ConstellationApp(apis.head)
   val constellationAppSim = new ConstellationAppSim(sim, testApp)
-  sim.triggerRandom(apis.tail)
+  // sim.triggerRandom(apis.tail)
 //      Thread.sleep(20 * 1000)
 
   logger.info("API Ports: " + apis.map { _.apiPort })
@@ -46,7 +46,10 @@ class E2ETest extends E2E {
 
   "Simulation setup" should "be successfully deployed" in {
     assert(successfulSimDeployment)
+    Thread.sleep(100*1000)
+    assert(true)
   }
+/*
 
   "ConstellationApp" should "register a deployed state channel locally" in {
     val deployResp = testApp.deploy(schemaStr, testChannelName)
@@ -59,6 +62,7 @@ class E2ETest extends E2E {
       assert(resp.forall(r => testApp.channelIdToChannel.get(r.channelId).contains(r)))
     }
   }
+*/
 
 //  "Channels" should "be received and deployed on neighboring nodes" in {
 //    val allNodesReceiveChannelDeployment = deployResp.map(constellationAppSim.channelDeploymentReceived(_, apis))

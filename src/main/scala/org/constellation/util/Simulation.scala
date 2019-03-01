@@ -332,7 +332,7 @@ class Simulation {
     assert(checkGenesis(apis))
     logger.info("Genesis validation passed")
 
-    triggerRandom(apis.tail)
+    triggerRandom(apis)
 
     setReady(apis)
 
