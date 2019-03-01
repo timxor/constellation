@@ -82,12 +82,16 @@ object ChannelMessage extends StrictLogging {
         val msg = create(genesisMessageStr, Genesis.CoinBaseHash, channelOpenRequest.name)
         dao.threadSafeMessageMemPool.selfChannelNameToGenesisMessage(channelOpenRequest.name) = msg
         val genesisHashChannelId = msg.signedMessageData.hash
+        logger.info(s": genesisHashChannelId $genesisHashChannelId")
+
         dao.threadSafeMessageMemPool.selfChannelIdToName(genesisHashChannelId) =
           channelOpenRequest.name
+
         dao.threadSafeMessageMemPool.put(Seq(msg), overrideLimit = true)
         val semaphore = new Semaphore(1)
         dao.threadSafeMessageMemPool.activeChannels(genesisHashChannelId) = semaphore
         semaphore.acquire()
+        logger.info(s"msg: ${msg.signedMessageData.data.channelId}")
         Future {
           var retries = 0
           var metadata: Option[ChannelMetadata] = None
@@ -95,6 +99,7 @@ object ChannelMessage extends StrictLogging {
             retries += 1
             Thread.sleep(1000)
             metadata = dao.channelService.get(genesisHashChannelId)
+            logger.info(s"dao.channelService: ${dao.channelService}")
           }
           val response =
             if (metadata.isEmpty) "Timeout awaiting block acceptance"
@@ -180,8 +185,8 @@ case class ChannelSendResponse(
 )
 
 case class SensorData(
-  temperature: Int,
-  name: String
+                       temperature: Int,
+                       name: String
 )
 
 object SensorData {

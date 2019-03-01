@@ -239,6 +239,7 @@ class Simulation {
       s"Accepted checkpoints below $numAccepted", {
         apis.forall { a =>
           val maybeString = a.metrics.get("checkpointAccepted")
+          logger.info(s"num accepted for api ${a.id} is ${maybeString}")
           maybeString.exists(_.toInt > numAccepted)
         }
       },
@@ -331,7 +332,7 @@ class Simulation {
     assert(checkGenesis(apis))
     logger.info("Genesis validation passed")
 
-    triggerRandom(apis)
+    triggerRandom(apis.tail)
 
     setReady(apis)
 

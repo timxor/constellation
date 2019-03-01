@@ -309,6 +309,7 @@ class API(udpAddress: InetSocketAddress)(implicit system: ActorSystem,
       pathPrefix("channel") {
         path("open") {
           entity(as[ChannelOpen]) { request =>
+            logger.info(s"request: $request")
             onComplete(
               ChannelMessage.createGenesis(request)
             ) { res =>
@@ -319,7 +320,7 @@ class API(udpAddress: InetSocketAddress)(implicit system: ActorSystem,
           path("send") {
             entity(as[ChannelSendRequest]) { send =>
               onComplete(ChannelMessage.createMessages(send)) { res =>
-                complete(res.getOrElse(ChannelSendResponse("Failed to create messages", Seq())).json)
+                complete(res.getOrElse(ChannelSendResponse("Failed to create messages", Seq())))
               }
             }
           } ~
@@ -388,6 +389,7 @@ class API(udpAddress: InetSocketAddress)(implicit system: ActorSystem,
         } ~
         path("random") { // Temporary
           dao.generateRandomTX = !dao.generateRandomTX
+          logger.info(s"dao.generateRandomTX: ${dao.generateRandomTX}")
           dao.metrics.updateMetric("generateRandomTX", dao.generateRandomTX.toString)
           complete(StatusCodes.OK)
         } ~

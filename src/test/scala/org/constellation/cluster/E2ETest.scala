@@ -19,6 +19,119 @@ import scala.util.{Random, Try}
 import scala.concurrent.duration._
 
 class E2ETest extends E2E {
+  import E2ETest._
+
+  implicit val timeout: Timeout = Timeout(90, TimeUnit.SECONDS)
+
+  private val schemaStr = SensorData.jsonSchema
+  private val testChannelName = "snickelfritz"
+  private val totalNumNodes = 3
+  private val n1 = createNode(randomizePorts = false, isGenesisNode = true)
+  private val nodes = Seq(n1) ++ Seq.tabulate(totalNumNodes - 1)(
+    i => createNode(seedHosts = Seq(), randomizePorts = false, portOffset = (i * 2) + 2)
+  )
+  private val apis: Seq[APIClient] = nodes.map { _.getAPIClient() }
+  private val addPeerRequests = nodes.map { _.getAddPeerRequest }
+  private val sim = new Simulation()
+  val testApp = new ConstellationApp(apis.head)
+  val constellationAppSim = new ConstellationAppSim(sim, testApp)
+  sim.triggerRandom(apis.tail)
+//      Thread.sleep(20 * 1000)
+
+  logger.info("API Ports: " + apis.map { _.apiPort })
+  val successfulSimDeployment = sim.run(apis, addPeerRequests)
+//  val channelMessageBroadcastResp = deployResp.flatMap[Seq[ChannelMessage]] { case Some(resp) =>
+//    constellationAppSim.broadcastChannelMessages(resp)
+//  }
+
+  "Simulation setup" should "be successfully deployed" in {
+    assert(successfulSimDeployment)
+  }
+
+  "ConstellationApp" should "register a deployed state channel locally" in {
+    val deployResp = testApp.deploy(schemaStr, testChannelName)
+    deployResp.map { resp: Option[Channel] =>
+      sim.logger.info("deploy response:" + resp.toString)
+      //      assert(resp.channelId == resp.channelOpenRequest.genesisHash)
+      //      assert("Timeout awaiting block acceptance" != resp.channelOpenRequest.errorMessage)
+      //      assert(resp.exists(r => r.channelId == r.channelOpenRequest.genesisHash))
+      assert(resp.exists(_.channelName == "snickelfritz"))
+      assert(resp.forall(r => testApp.channelIdToChannel.get(r.channelId).contains(r)))
+    }
+  }
+
+//  "Channels" should "be received and deployed on neighboring nodes" in {
+//    val allNodesReceiveChannelDeployment = deployResp.map(constellationAppSim.channelDeploymentReceived(_, apis))
+//    allNodesReceiveChannelDeployment.map(assert(_))
+//  }
+
+//  "Channel messages" should "be be broadcasted to neighboring nodes" in {
+//    channelMessageBroadcastResp.foreach { res: Seq[ChannelMessage] =>
+//      sim.logger.info(
+//        s"broadcastResp is: ${res.toString}"
+//      )
+//    }
+//    val allNodesReceiveChannelDeployment = deployResp.map(constellationAppSim.channelDeploymentReceived(_, apis))
+//    allNodesReceiveChannelDeployment.map(assert)
+//  }
+
+//  "E2E test" should "demonstrate full flow" in {
+//
+//    val downloadNode = createNode(seedHosts = Seq(HostPort("localhost", 9001)),
+//                                  randomizePorts = false,
+//                                  portOffset = 50)
+//
+//    val downloadAPI = downloadNode.getAPIClient()
+//    logger.info(s"DownloadNode API Port: ${downloadAPI.apiPort}")
+//    assert(sim.checkReady(Seq(downloadAPI)))
+////    allNodesReceiveChannelDeployment.foreach{ res => res.foreach(constellationAppSim.postDownload(apis.head, _))}
+////
+////    Thread.sleep(20 * 1000)
+////
+////    val allNodes = nodes :+ downloadNode
+////
+////    val allAPIs: Seq[APIClient] = allNodes.map { _.getAPIClient() } //apis :+ downloadAPI
+////    val updatePasswordResponses = updatePasswords(allAPIs)
+////    assert(updatePasswordResponses.forall(_.code == StatusCodes.Ok))
+////    assert(sim.healthy(allAPIs))
+////    // Thread.sleep(1000*1000)
+////
+////    // Stop transactions
+////    sim.triggerRandom(allAPIs)
+////
+////    sim.logger.info("Stopping transactions to run parity check")
+////
+////    Thread.sleep(30000)
+////
+////    // TODO: Change assertions to check several times instead of just waiting ^ with sleep
+////    // Follow pattern in Simulation.await examples
+////    assert(allAPIs.map { _.metrics("checkpointAccepted") }.distinct.size == 1)
+////    assert(allAPIs.map { _.metrics("transactionAccepted") }.distinct.size == 1)
+////
+////    val storedSnapshots = allAPIs.map { _.simpleDownload() }
+////
+////     constellationAppSim.dumpJson(storedSnapshots)
+////
+////    // TODO: Move to separate test
+////
+////    // TODO: This is flaky and fails randomly sometimes
+////    val snaps = storedSnapshots.toSet
+////      .map { x: Seq[StoredSnapshot] =>
+////        x.map { _.checkpointCache.flatMap { _.checkpointBlock } }.toSet
+////      }
+////
+////    // Not inlining this for a reason -- the snaps object is quite large,
+////    // and scalatest tries to be smart when the assert fails and dumps the object to stdout,
+////    // overwhelming the test output.
+////    // By extracting to a var I should get sane output on failure.
+////    // Obviously figuring out why this randomly fails would be even better, but we're working on that.
+////    val sizeEqualOnes = snaps.size == 1
+////    assert(sizeEqualOnes)
+//
+//  }
+}
+
+object E2ETest {
   val updatePasswordReq = UpdatePassword(
     Option(System.getenv("DAG_PASSWORD")).getOrElse("updatedPassword")
   )
@@ -29,104 +142,6 @@ class E2ETest extends E2E {
       client.setPassword(updatePasswordReq.password)
       response
     }
-
-  implicit val timeout: Timeout = Timeout(90, TimeUnit.SECONDS)
-
-  val totalNumNodes = 3
-
-  private val n1 = createNode(randomizePorts = false)
-
-  //private val address1 = n1.getInetSocketAddress
-
-  private val nodes = Seq(n1) ++ Seq.tabulate(totalNumNodes - 1)(
-    i => createNode(seedHosts = Seq(), randomizePorts = false, portOffset = (i * 2) + 2)
-  )
-
-  private val apis: Seq[APIClient] = nodes.map { _.getAPIClient() }
-
-  private val addPeerRequests = nodes.map { _.getAddPeerRequest }
-
-  private val sim = new Simulation()
-
-  private val initialAPIs = apis
-
-  // val n1App = new ConstellationApp(apis.head)
-
-  // val constellationAppSim = new ConstellationAppSim(sim, n1App)
-
-  "E2E Run" should "demonstrate full flow" in {
-    logger.info("API Ports: " + apis.map { _.apiPort })
-
-    assert(sim.run(initialAPIs, addPeerRequests))
-
-    // val deployResponse = constellationAppSim.openChannel(apis)
-
-    val downloadNode = createNode(seedHosts = Seq(HostPort("localhost", 9001)),
-                                  randomizePorts = false,
-                                  portOffset = 50)
-
-    val downloadAPI = downloadNode.getAPIClient()
-    logger.info(s"DownloadNode API Port: ${downloadAPI.apiPort}")
-    assert(sim.checkReady(Seq(downloadAPI)))
-    // deployResponse.foreach{ res => res.foreach(constellationAppSim.postDownload(apis.head, _))}
-
-    // messageSim.postDownload(apis.head)
-
-    Thread.sleep(20 * 1000)
-
-    val allNodes = nodes :+ downloadNode
-
-    val allAPIs: Seq[APIClient] = allNodes.map { _.getAPIClient() } //apis :+ downloadAPI
-    val updatePasswordResponses = updatePasswords(allAPIs)
-    assert(updatePasswordResponses.forall(_.code == StatusCodes.Ok))
-    assert(sim.healthy(allAPIs))
-    // Thread.sleep(1000*1000)
-
-    // Stop transactions
-    sim.triggerRandom(allAPIs)
-
-    sim.logger.info("Stopping transactions to run parity check")
-
-    Thread.sleep(30000)
-
-    // TODO: Change assertions to check several times instead of just waiting ^ with sleep
-    // Follow pattern in Simulation.await examples
-    assert(allAPIs.map { _.metrics("checkpointAccepted") }.distinct.size == 1)
-    assert(allAPIs.map { _.metrics("transactionAccepted") }.distinct.size == 1)
-
-    val storedSnapshots = allAPIs.map { _.simpleDownload() }
-
-    // constellationAppSim.dumpJson(storedSnapshots)
-
-    // TODO: Move to separate test
-
-    // TODO: This is flaky and fails randomly sometimes
-    val snaps = storedSnapshots.toSet
-      .map { x: Seq[StoredSnapshot] =>
-        x.map { _.checkpointCache.flatMap { _.checkpointBlock } }.toSet
-      }
-
-    // Not inlining this for a reason -- the snaps object is quite large,
-    // and scalatest tries to be smart when the assert fails and dumps the object to stdout,
-    // overwhelming the test output.
-    // By extracting to a var I should get sane output on failure.
-    // Obviously figuring out why this randomly fails would be even better, but we're working on that.
-    val sizeEqualOnes = snaps.size == 1
-    assert(sizeEqualOnes)
-
-  }
-
-/*  // "ConstellationApp"
-  ignore should "register a deployed state channel" in {
-    sim.triggerRandom(apis)
-    val deployResp = n1App.deploy(SensorData.jsonSchema, "channel_1")
-    deployResp.map { resp: Option[Channel] =>
-      sim.logger.info("deploy response:" + resp.toString)
-      assert(resp.exists(r => r.channelId == r.channelOpenRequest.genesisHash))
-      assert(resp.exists(_.channelName == "channel_1"))
-      assert(resp.forall(r => n1App.channelIdToChannel.get(r.channelId).contains(r)))
-    }
-  }*/
 }
 
   class ConstellationAppSim(sim: Simulation, constellationApp: ConstellationApp)(
@@ -136,24 +151,23 @@ class E2ETest extends E2E {
     private val channelName = "test"
     private var broadcastedMessages: Seq[ChannelMessage] = Seq.empty[ChannelMessage]
 
-    def openChannel(apis: Seq[APIClient]): Future[Option[Channel]] = {
-      val deployResponse  = constellationApp.deploy(schemaStr, channelName)
-      deployResponse.foreach { resp =>
-    if (resp.isDefined) {
+
+    def channelDeploymentReceived(resp: Channel, apis: Seq[APIClient]) = {
       sim.awaitConditionMet(
         "Test channel genesis not stored",
         apis.forall {
           _.getBlocking[Option[ChannelMessageMetadata]](
-            "messageService/" + resp.map(_.channelId).getOrElse(channelName)
+            "messageService/" + resp.channelId
           ).exists(_.blockHash.nonEmpty)
         }
       )
-      resp.foreach { channel: Channel =>
+    }
 
+    def broadcastChannelMessages(channel: Channel): Future[ChannelSendResponse] = {
         val validNameChars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".toCharArray.map { _.toString }.toSeq
         val invalidNameChars = validNameChars.map { _.toLowerCase }
 
-        val messagesToBroadcastMessages: Seq[SensorData] = (0 until 10).flatMap { batchNumber =>
+        val messageJson = (0 until 10).map { batchNumber =>
           import constellation._
 
           val validMessages = Seq.fill(batchNumber % 2) {
@@ -173,22 +187,64 @@ class E2ETest extends E2E {
           sim.logger.info(
             s"Message batch $batchNumber complete, sent ${msgs.size} messages"
           )
-          msgs
+          msgs.json
         }
-        // TODO: Fix type bounds after changing schema
-        /*val broadcastResp: Future[Seq[ChannelMessage]] =
-          constellationApp.broadcast(messagesToBroadcastMessages)
-        broadcastResp.foreach { res: Seq[ChannelMessage] =>
-          sim.logger.info(
-            s"broadcastResp is: ${res.toString}"
-          )
-          broadcastedMessages = res
-        }*/
-      }
+          constellationApp.broadcast(ChannelSendRequest(channel.channelId, messageJson) :: Nil)
     }
-      }
-      deployResponse
-    }
+
+
+//    def openChannel(apis: Seq[APIClient]): Future[Option[Channel]] = {
+//      val deployResponse  = constellationApp.deploy(schemaStr, channelName)
+//      deployResponse.foreach { resp: Option[Channel] =>
+//    if (resp.isDefined) {
+//      sim.awaitConditionMet(
+//        "Test channel genesis not stored",
+//        apis.forall {
+//          _.getBlocking[Option[ChannelMessageMetadata]](
+//            "messageService/" + resp.map(_.channelId).getOrElse(channelName)
+//          ).exists(_.blockHash.nonEmpty)
+//        }
+//      )
+//      resp.foreach { channel: Channel =>
+//
+//        val validNameChars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".toCharArray.map { _.toString }.toSeq
+//        val invalidNameChars = validNameChars.map { _.toLowerCase }
+//
+//        val messagesToBroadcastMessages: Seq[SensorData] = (0 until 10).flatMap { batchNumber =>
+//          import constellation._
+//
+//          val validMessages = Seq.fill(batchNumber % 2) {
+//            SensorData(
+//              Random.nextInt(100),
+//              Seq.fill(5) { Random.shuffle(validNameChars).head }.mkString
+//            )
+//          }
+//          val invalidMessages = Seq.fill((batchNumber + 1) % 2) {
+//            SensorData(
+//              Random.nextInt(100) + 500,
+//              Seq.fill(5) { Random.shuffle(invalidNameChars).head }.mkString
+//            )
+//          }
+//
+//          val msgs = validMessages ++ invalidMessages
+//          sim.logger.info(
+//            s"Message batch $batchNumber complete, sent ${msgs.size} messages"
+//          )
+//          msgs
+//        }
+//        val broadcastResp: Future[Seq[ChannelMessage]] =
+//          constellationApp.broadcast(messagesToBroadcastMessages)
+//        broadcastResp.foreach { res: Seq[ChannelMessage] =>
+//          sim.logger.info(
+//            s"broadcastResp is: ${res.toString}"
+//          )
+//          broadcastedMessages = res
+//        }
+//      }
+//    }
+//      }
+//      deployResponse
+//    }
 
     def postDownload(firstAPI: APIClient = constellationApp.clientApi, channel: Channel) = {
       sim.logger.info(s"channel ${channel.channelId}")

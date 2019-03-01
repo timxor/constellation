@@ -170,7 +170,7 @@ class APIClient private (host: String = "127.0.0.1",
     postNonBlocking(suffix, b, timeout).blocking(timeout)
   }
 
-  def postNonBlocking[T <: AnyRef](suffix: String, b: AnyRef, timeout: Duration = 5.seconds)(
+  def postNonBlocking[T <: AnyRef](suffix: String, b: AnyRef, timeout: Duration = 15.seconds)(
     implicit m: Manifest[T],
     f: Formats = constellation.constellationFormats
   ): Future[T] = {

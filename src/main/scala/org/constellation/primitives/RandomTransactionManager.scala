@@ -2,6 +2,7 @@ package org.constellation.primitives
 
 import java.util.concurrent.Semaphore
 
+import com.typesafe.scalalogging.StrictLogging
 import constellation._
 import org.constellation.DAO
 import org.constellation.consensus.EdgeProcessor
@@ -12,7 +13,7 @@ import scala.concurrent.{ExecutionContextExecutor, Future}
 import scala.util.{Random, Try}
 
 class RandomTransactionManager(periodSeconds: Int = 1)(implicit dao: DAO)
-    extends Periodic("RandomTransactionManager", periodSeconds) {
+    extends Periodic("RandomTransactionManager", periodSeconds) with StrictLogging{
 
   def trigger(): Future[Any] = {
     Option(dao.peerManager).foreach {
@@ -61,6 +62,7 @@ class RandomTransactionManager(periodSeconds: Int = 1)(implicit dao: DAO)
         }
       cm.foreach { c =>
         dao.threadSafeMessageMemPool.put(Seq(c))
+        logger.info(s"messageMemPoolSize: ${dao.threadSafeMessageMemPool.unsafeCount.toString}")
         dao.metrics.updateMetric("messageMemPoolSize",
                                  dao.threadSafeMessageMemPool.unsafeCount.toString)
       }
@@ -152,6 +154,7 @@ class RandomTransactionManager(periodSeconds: Int = 1)(implicit dao: DAO)
             dao.blockFormationInProgress = true
 
             val messages = dao.threadSafeMessageMemPool.pull(1).getOrElse(Seq())
+
             futureTryWithTimeoutMetric(
               EdgeProcessor.formCheckpoint(messages).getTry(60),
               "formCheckpointFromRandomTXManager",

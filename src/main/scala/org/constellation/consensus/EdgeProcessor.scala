@@ -24,6 +24,7 @@ object EdgeProcessor extends StrictLogging {
   def acceptCheckpoint(checkpointCacheData: CheckpointCacheData)(implicit dao: DAO): Unit = {
 
     if (checkpointCacheData.checkpointBlock.isEmpty) {
+      logger.info(s"checkpointCacheData.checkpointBlock.isEmpty: ${checkpointCacheData.checkpointBlock.isEmpty}")
       dao.metrics.incrementMetric("acceptCheckpointCalledWithEmptyCB")
     } else {
 
@@ -41,13 +42,14 @@ object EdgeProcessor extends StrictLogging {
       } else {
         dao.metrics.incrementMetric("heightNonEmpty")
       }
-
       cb.checkpoint.edge.data.messages.foreach { m =>
+        logger.info(s"cb.checkpoint.edge.data.messages.foreach: ${m}")
         if (m.signedMessageData.data.previousMessageHash != Genesis.CoinBaseHash) {
           dao.messageService.put(
             m.signedMessageData.data.channelId,
             ChannelMessageMetadata(m, Some(cb.baseHash))
           )
+          logger.info(s"ChannelMessageMetadata(m, Some(cb.baseHash): ${ChannelMessageMetadata(m, Some(cb.baseHash))}")
           dao.channelService.updateOnly(
             m.signedMessageData.hash,
             { cmd =>
@@ -58,7 +60,11 @@ object EdgeProcessor extends StrictLogging {
               )
             }
           )
+          logger.info(s"dao.channelService.updateOnly: ${ChannelMessageMetadata(m, Some(cb.baseHash))}")
+
+          logger.info(s"dao.channelService.updateOnly: ${m}")
         } else { // Unsafe json extract
+          logger.info(s"Unsafe json extract")
           dao.channelService.put(
             m.signedMessageData.hash,
             ChannelMetadata(
@@ -66,6 +72,11 @@ object EdgeProcessor extends StrictLogging {
               ChannelMessageMetadata(m, Some(cb.baseHash))
             )
           )
+          logger.info(s"Unsafe json extract: ${ChannelMetadata(
+            m.signedMessageData.data.message.x[ChannelOpen],
+            ChannelMessageMetadata(m, Some(cb.baseHash))
+          )}")
+
         }
         dao.messageService.put(m.signedMessageData.hash,
                                ChannelMessageMetadata(m, Some(cb.baseHash)))
