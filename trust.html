@@ -1,0 +1,37 @@
+<head>
+    <style> body { margin: 0; } </style>
+
+    <script src="//unpkg.com/3d-force-graph"></script>
+    <!--<script src="../../dist/3d-force-graph.js"></script>-->
+</head>
+
+<body>
+<div id="3d-graph"></div>
+
+<script>
+    const Graph = ForceGraph3D()
+      (document.getElementById('3d-graph'))
+        .jsonUrl('./src/main/resources/ui/sample_data/dag.json')
+        .nodeLabel('id')
+        .nodeVal('group')
+        .nodeRelSize(6)
+        //.nodeAutoColorBy('group')
+        .linkColor(link => link.trustPosNeg < 0 ? 'red' : 'green' )
+        .nodeColor(node => node.color)
+        .linkDirectionalParticles("trust")
+        .linkDirectionalParticleSpeed(d => d.trust * 0.01)
+        .linkDirectionalParticleWidth(15)
+        .linkOpacity(0.20)
+        .linkWidth(2)
+        .d3Force('link')
+        .distance(link => (link.distance - 20)*10)
+   //     .d3Force('charge').strength(-150)
+   //     .d3Force('collision', d3.forceCollide(node => 100))
+        .d3AlphaDecay(0.001) // 0.0228
+        .d3VelocityDecay(0.001)
+        .cooldownTime(60000);
+
+    // let { nodes, links } = Graph.graphData();
+
+  </script>
+</body>
