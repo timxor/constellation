@@ -6,7 +6,7 @@ import better.files.File
 import cats.effect.IO
 import com.typesafe.scalalogging.Logger
 import constellation._
-import io.micrometer.core.instrument.Clock
+import io.micrometer.core.instrument.{Clock, Tag}
 import io.micrometer.core.instrument.Metrics.globalRegistry
 import io.micrometer.core.instrument.binder.jvm._
 import io.micrometer.core.instrument.binder.logging.LogbackMetrics
@@ -30,7 +30,7 @@ object Metrics {
     val prometheusMeterRegistry = new PrometheusMeterRegistry(PrometheusConfig.DEFAULT,
                                                               CollectorRegistry.defaultRegistry,
                                                               Clock.SYSTEM)
-    prometheusMeterRegistry.config().commonTags("application", s"Constellation_$keyHash")
+    prometheusMeterRegistry.config().commonTags("application", "Constellation")
     globalRegistry.add(prometheusMeterRegistry)
 
     new JvmMemoryMetrics().bindTo(prometheusMeterRegistry)
@@ -113,12 +113,18 @@ class Metrics(periodSeconds: Int = 1)(implicit dao: DAO)
     updateMetric(key, value.toLong)
   }
 
+  private def guagedAtomicLong(key: String): AtomicLong = {
+    import scala.collection.JavaConverters._
+    val tags = List(Tag.of("metric", key)).asJava
+    globalRegistry.gauge(s"dag_$key", tags, new AtomicLong(0L))
+  }
+
   def updateMetric(key: String, value: Long): Unit = {
-    countMetrics.getOrElse(key, globalRegistry.gauge(s"dag_$key", new AtomicLong(0L))).set(value)
+    countMetrics.getOrElse(key, guagedAtomicLong(key)).set(value)
   }
 
   def incrementMetric(key: String): Unit = {
-    countMetrics.getOrElseUpdate(key, globalRegistry.gauge(s"dag_$key", new AtomicLong(0L))).getAndUpdate(_ + 1L)
+    countMetrics.getOrElseUpdate(key, guagedAtomicLong(key)).getAndUpdate(_ + 1L)
   }
 
   def updateMetricAsync(key: String, value: String): IO[Unit] = IO(updateMetric(key, value))
