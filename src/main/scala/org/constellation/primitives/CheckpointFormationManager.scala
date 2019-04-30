@@ -20,7 +20,7 @@ class CheckpointFormationManager(
   undersizedCheckpointThresholdSeconds: Int = 30,
   crossTalkConsensusActor: ActorRef
 )(implicit dao: DAO)
-  extends Periodic[Try[Option[Boolean]]]("RandomTransactionManager", periodSeconds) {
+    extends Periodic[Try[Option[Boolean]]]("RandomTransactionManager", periodSeconds) {
 
   def toFiniteDuration(d: java.time.Duration): FiniteDuration = Duration.fromNanos(d.toNanos)
 
@@ -31,6 +31,7 @@ class CheckpointFormationManager(
 
   @volatile private var lastCheckpoint = LocalDateTime.now
 
+  //noinspection ScalaStyle
   override def trigger() = {
     val memPoolCount = dao.threadSafeTXMemPool.unsafeCount
     val elapsedTime = toFiniteDuration(JDuration.between(lastCheckpoint, LocalDateTime.now))
