@@ -1,5 +1,6 @@
 package org.constellation
 
+import java.time.LocalDateTime
 import java.util.concurrent.TimeUnit
 
 import akka.pattern.ask
@@ -31,6 +32,8 @@ class DAO() extends NodeData with Genesis with EdgeDAO with SimpleWalletLike wit
   var downloadFinishedTime: Long = System.currentTimeMillis()
 
   val channelStorage: ChannelStorage = ChannelStorage(this)
+
+  @volatile var lastCheckpoint = LocalDateTime.now
 
   def preventLocalhostAsPeer: Boolean = !nodeConfig.allowLocalhostPeers
 

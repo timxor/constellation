@@ -4,6 +4,7 @@ import java.time.{LocalDateTime, Duration => JDuration}
 import java.util.concurrent.TimeUnit
 
 import akka.actor.ActorRef
+import com.typesafe.scalalogging.StrictLogging
 import constellation.{EasyFutureBlock, futureTryWithTimeoutMetric}
 import org.constellation.DAO
 import org.constellation.consensus.CrossTalkConsensus.StartNewBlockCreationRound
@@ -20,7 +21,8 @@ class CheckpointFormationManager(
   undersizedCheckpointThresholdSeconds: Int = 30,
   crossTalkConsensusActor: ActorRef
 )(implicit dao: DAO)
-    extends Periodic[Try[Option[Boolean]]]("RandomTransactionManager", periodSeconds) {
+    extends Periodic[Try[Option[Boolean]]]("RandomTransactionManager", periodSeconds)
+    with StrictLogging {
 
   def toFiniteDuration(d: java.time.Duration): FiniteDuration = Duration.fromNanos(d.toNanos)
 
@@ -29,12 +31,13 @@ class CheckpointFormationManager(
   private var formEmptyCheckpointAfterThreshold: FiniteDuration =
     undersizedCheckpointThresholdSeconds.seconds
 
-  @volatile private var lastCheckpoint = LocalDateTime.now
-
   //noinspection ScalaStyle
   override def trigger() = {
     val memPoolCount = dao.threadSafeTXMemPool.unsafeCount
-    val elapsedTime = toFiniteDuration(JDuration.between(lastCheckpoint, LocalDateTime.now))
+    val elapsedTime = toFiniteDuration(JDuration.between(dao.lastCheckpoint, LocalDateTime.now))
+    logger.info(
+      s"Attempting to create checkpoint: Mempoolcount: $memPoolCount, elapsedTime: $elapsedTime"
+    )
 
     val minTXInBlock = dao.processingConfig.minCheckpointFormationThreshold
 
@@ -42,6 +45,8 @@ class CheckpointFormationManager(
         dao.formCheckpoints &&
         dao.nodeState == NodeState.Ready &&
         !dao.blockFormationInProgress) {
+
+      logger.info("forming checkpoint")
 
       if (elapsedTime >= formEmptyCheckpointAfterThreshold) {
         // randomize the next threshold window to prevent nodes from synchronizing empty block formation.
@@ -55,7 +60,7 @@ class CheckpointFormationManager(
 
       crossTalkConsensusActor ! StartNewBlockCreationRound
       dao.metrics.updateMetric("blockFormationInProgress", dao.blockFormationInProgress.toString)
-    }
+    } else { logger.info("Skipping checkpoint formation") }
 
     Future.successful(Try(None))
   }

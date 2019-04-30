@@ -1,5 +1,7 @@
 package org.constellation.consensus
 
+import java.time.LocalDateTime
+
 import akka.actor.{Actor, ActorContext, ActorLogging, ActorRef, Cancellable, Props}
 import cats.implicits._
 import org.constellation.DAO
@@ -120,6 +122,7 @@ class RoundManager(roundTimeout: FiniteDuration)(implicit dao: DAO)
       cmd.maybeCB.foreach(cb => dao.peerManager ! UpdatePeerNotifications(cb.notifications))
 
       dao.blockFormationInProgress = false
+      dao.lastCheckpoint = LocalDateTime.now
       val elapsedS = (System.currentTimeMillis - startTime) / 1000
       log.debug(s"Finished StopBlockCreationRound. elapsed: ${elapsedS}s")
 

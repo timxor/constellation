@@ -199,6 +199,7 @@ case class NodeConfig(
   allowLocalhostPeers: Boolean = false,
   cliConfig: CliConfig = CliConfig(),
   processingConfig: ProcessingConfig = ProcessingConfig(),
+  randomTXManagerON: Boolean = false,
   dataPollingManagerOn: Boolean = false
 )
 
@@ -260,7 +261,10 @@ class ConstellationNode(
     Http().bindAndHandle(routes, nodeConfig.httpInterface, nodeConfig.httpPort)
 
   val peerAPI = new PeerAPI(ipManager, crossTalkConsensusActor)
-  val randomTXManager = new RandomTransactionManager(crossTalkConsensusActor)
+  var randomTXManager: RandomTransactionManager[Nothing] = null
+  if (nodeConfig.randomTXManagerON) {
+    randomTXManager = new RandomTransactionManager(crossTalkConsensusActor)
+  }
 
   def getIPData: ValidPeerIPData = {
     ValidPeerIPData(nodeConfig.hostName, nodeConfig.peerHttpPort)
@@ -281,7 +285,9 @@ class ConstellationNode(
 
   def shutdown(): Unit = {
     dao.nodeState = NodeState.Offline
-    randomTXManager.shutdown()
+    if (nodeConfig.randomTXManagerON) {
+      randomTXManager.shutdown()
+    }
     bindingFuture
       .foreach(_.unbind())
 
