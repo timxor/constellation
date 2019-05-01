@@ -399,7 +399,7 @@ trait EdgeDAO {
   val addressService = new AddressService(
     5000
     // processingConfig.addressLRUMaxSize
-  )(_ => metrics)
+  )
   val notificationService = new NotificationService()
   val messageService : MessageService
   val channelService = new ChannelService()

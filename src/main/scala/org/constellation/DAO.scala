@@ -96,6 +96,8 @@ class DAO() extends NodeData with Genesis with EdgeDAO with SimpleWalletLike wit
     checkpointService = CheckpointService(this, processingConfig.checkpointLRUMaxSize)
     snapshotService = SnapshotService(this)
 
+  }
+
   lazy val concurrentTipService: ConcurrentTipService = new TrieBasedTipService(processingConfig.maxActiveTipsAllowedInMemory,
     processingConfig.maxWidth,
     processingConfig.numFacilitatorPeers,

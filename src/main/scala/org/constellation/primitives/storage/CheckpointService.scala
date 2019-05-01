@@ -45,7 +45,6 @@ class CheckpointBlocksMemPool(size: Int = 50000)(implicit dao: DAO)
     value: CheckpointCache
   ): CheckpointCacheMetadata = {
     // Try{value.checkpointBlock.foreach(cb => incrementChildrenCount(cb.parentSOEBaseHashes()))
-}
     super.putSync(key, CheckpointCacheMetadata(storeMerkleRoots(value.checkpointBlock.get),
                                             value.children,
                                             value.height))
@@ -181,7 +180,7 @@ class CheckpointService(dao: DAO, size: Int = 50000) {
       .extendedLookup[String, CheckpointCacheMetadata](List(memPool, midDb, oldDb))
       .map(_.map(_.map(CheckpointService.convert(_)(dao))))
 
-  def get(key: String): Option[CheckpointCacheData] = lookup(key).unsafeRunSync()
+  def get(key: String): Option[CheckpointCacheMetadata] = lookup(key).unsafeRunSync()
   def getFullData(key: String) = lookup(key).map(_.map(CheckpointService.convert(_)(dao))).unsafeRunSync()
   def contains(key: String): Boolean = lookup(key).map(_.nonEmpty).unsafeRunSync()
 
