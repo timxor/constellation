@@ -2,6 +2,7 @@ package org.constellation.primitives
 
 import java.security.{KeyPair, PublicKey}
 
+import org.constellation.DAO
 import org.constellation.crypto.KeyUtils
 import org.constellation.crypto.KeyUtils.hexToPublicKey
 import org.constellation.primitives.Schema.EdgeHashType.EdgeHashType
@@ -210,9 +211,13 @@ object Schema {
 
   // TODO: Separate cache with metadata vs what is stored in snapshot.
 
-  case class CheckpointCacheData(
+  case class CheckpointCacheMetadata(
+    checkpointBlock: CheckpointBlockMetadata,
+    children: Int = 0,
+    height: Option[Height] = None
+  )
+  case class CheckpointCache(
     checkpointBlock: Option[CheckpointBlock] = None,
-    //         metadata: CommonMetadata = CommonMetadata(),
     children: Int = 0,
     height: Option[Height] = None
   ) {

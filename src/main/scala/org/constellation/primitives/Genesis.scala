@@ -2,9 +2,9 @@ package org.constellation.primitives
 
 import java.security.KeyPair
 
+import cats.implicits._
 import constellation._
 import org.constellation.DAO
-import org.constellation.consensus.TipData
 import org.constellation.crypto.KeyUtils
 import org.constellation.primitives.Schema._
 
@@ -94,15 +94,15 @@ trait Genesis extends NodeData with EdgeDAO {
     // Store hashes for the edges
 
     go.genesis.store(
-      CheckpointCacheData(Some(go.genesis), height = Some(Height(0, 0)))
+      CheckpointCache(Some(go.genesis), height = Some(Height(0, 0)))
     )
 
     go.initialDistribution.store(
-      CheckpointCacheData(Some(go.initialDistribution), height = Some(Height(1, 1)))
+        CheckpointCache(Some(go.initialDistribution), height = Some(Height(1, 1)))
     )
 
     go.initialDistribution2.store(
-      CheckpointCacheData(Some(go.initialDistribution2), height = Some(Height(1, 1)))
+      CheckpointCache(Some(go.initialDistribution2), height = Some(Height(1, 1)))
     )
 
     go.genesis.storeSOE()
@@ -112,17 +112,19 @@ trait Genesis extends NodeData with EdgeDAO {
     // Store the balance for the genesis TX minus the distribution along with starting rep score.
     go.genesis.transactions.foreach { rtx =>
       val bal = rtx.amount - (go.initialDistribution.transactions.map { _.amount }.sum * 2)
-      dao.addressService.putSync(rtx.dst.hash,
-                             AddressCacheData(bal, bal, Some(1000D), balanceByLatestSnapshot = bal))
+      dao.addressService.putSync(
+        rtx.dst.hash,
+        AddressCacheData(bal, bal, Some(1000D), balanceByLatestSnapshot = bal)
+      )
     }
 
     // Store the balance for the initial distribution addresses along with starting rep score.
     go.initialDistribution.transactions.foreach { t =>
       val bal = t.amount * 2
-      dao.addressService.putSync(t.dst.hash,
-                             AddressCacheData(bal, bal, Some(1000D), balanceByLatestSnapshot = bal))
+      dao.addressService
+        .putSync(t.dst.hash, AddressCacheData(bal, bal, Some(1000D), balanceByLatestSnapshot = bal))
     }
-
+    storeTransactions(go)
     val numTX = (1 + go.initialDistribution.transactions.size * 2).toString
     //  metricsManager ! UpdateMetric("validTransactions", numTX)
     //  metricsManager ! UpdateMetric("uniqueAddressesInLedger", numTX)
@@ -142,19 +144,26 @@ trait Genesis extends NodeData with EdgeDAO {
     dao.metrics.updateMetric("genesisAccepted", "true")
     //   metricsManager ! UpdateMetric("z_genesisBlock", go.json)
     if (setAsTips) {
-      dao.concurrentTipService.put(go.initialDistribution.baseHash,
-                                   TipData(
-                                     go.initialDistribution,
-                                     0
-                                   ))(dao.metrics)
-      dao.concurrentTipService.put(go.initialDistribution2.baseHash,
-                                   TipData(
-                                     go.initialDistribution2,
-                                     0
-                                   ))(dao.metrics)
+      dao.concurrentTipService.put(go)(dao.metrics)
     }
     dao.metrics.updateMetric("genesisHash", go.genesis.soeHash)
     // println(s"accept genesis = ", go)
+  }
+
+  private def storeTransactions(genesisObservation: GenesisObservation)(implicit dao: DAO): Unit = {
+    Seq(genesisObservation.genesis,
+        genesisObservation.initialDistribution,
+        genesisObservation.initialDistribution2)
+      .flatMap { cb =>
+        cb.transactions.map(
+          tx =>
+            dao.transactionService.midDb
+              .put(tx.hash, TransactionCacheData(transaction = tx, cbBaseHash = Some(cb.baseHash)))
+        )
+      }
+      .toList
+      .sequence
+      .unsafeRunAsyncAndForget()
   }
 
 }

@@ -7,7 +7,37 @@ import cats.implicits._
 import constellation.signedObservationEdge
 import org.constellation.DAO
 import org.constellation.primitives.Schema._
-import org.constellation.util.HashSignature
+import org.constellation.primitives.storage.StorageService
+import org.constellation.util.{HashSignature, MerkleTree}
+
+
+abstract class CheckpointEdgeLike(val checkpoint: CheckpointEdge) {
+  def baseHash: String = checkpoint.edge.baseHash
+
+  def parentSOEHashes: Seq[String] = checkpoint.edge.parentHashes
+
+  def parentSOEBaseHashes()(implicit dao: DAO): Seq[String] =
+    checkpoint.edge.parentHashes.flatMap { dao.soeService.getSync }.map {
+      _.signedObservationEdge.baseHash
+    }
+
+  def storeSOE()(implicit dao: DAO): Unit = {
+    dao.soeService.putSync(soeHash, SignedObservationEdgeCache(soe, resolved = true))
+  }
+  def soe: SignedObservationEdge = checkpoint.edge.signedObservationEdge
+
+  def soeHash: String = checkpoint.edge.signedObservationEdge.hash
+
+  def signatures: Seq[HashSignature] =
+    checkpoint.edge.signedObservationEdge.signatureBatch.signatures
+}
+
+case class CheckpointBlockMetadata(
+  transactionsMerkleRoot: String,
+  checkpointEdge: CheckpointEdge,
+  messagesMerkleRoot: Option[String],
+  notificationsMerkleRoot: Option[String]
+) extends CheckpointEdgeLike(checkpointEdge)
 
 case class CheckpointBlock(
   transactions: Seq[Transaction],
@@ -120,14 +150,14 @@ case class CheckpointBlock(
 
   def soeHash: String = checkpoint.edge.signedObservationEdge.hash
 
-  def store(cache: CheckpointCacheData)(implicit dao: DAO): Unit = {
+  def store(cache: CheckpointCache)(implicit dao: DAO): Unit = {
     /*
           transactions.foreach { rt =>
             rt.edge.store(db, Some(TransactionCacheData(rt, inDAG = inDAG, resolved = true)))
           }
      */
     // checkpoint.edge.storeCheckpointData(db, {prevCache: CheckpointCacheData => cache.plus(prevCache)}, cache, resolved)
-    dao.checkpointService.memPool.put(baseHash, cache).unsafeRunSync()
+    dao.checkpointService.memPool.putSync(baseHash, cache)
     dao.recentBlockTracker.put(cache)
 
   }
@@ -372,7 +402,7 @@ sealed trait CheckpointBlockValidatorNel {
     if (parentSOEBaseHashes.size != 2) {
       dao.metrics.incrementMetric("validationParentSOEBaseHashesMissing")
     }
-    val maybeDatas = parentSOEBaseHashes.map(dao.checkpointService.get)
+    val maybeDatas = parentSOEBaseHashes.map(dao.checkpointService.getFullData)
 
     if (maybeDatas.exists{_.isEmpty}) {
       dao.metrics.incrementMetric("validationParentCBLookupMissing")
@@ -386,7 +416,7 @@ sealed trait CheckpointBlockValidatorNel {
   }
 
   def isInSnapshot(c: CheckpointBlock)(implicit dao: DAO): Boolean =
-    dao.threadSafeSnapshotService.acceptedCBSinceSnapshot
+    !dao.threadSafeSnapshotService.acceptedCBSinceSnapshot
       .contains(c.baseHash)
 
   def getSummaryBalance(c: CheckpointBlock)(implicit dao: DAO): AddressBalance = {
@@ -449,6 +479,76 @@ sealed trait CheckpointBlockValidatorNel {
       else preTreeResult.product(validateCheckpointBlockTree(cb))
 
     postTreeIgnoreEmptySnapshot.map(_ => cb)
+  }
+
+  def getTransactionsTillSnapshot(
+    cbs: Seq[CheckpointBlock]
+  )(implicit dao: DAO): Seq[Transaction] = {
+
+    def getParentTransactions(parents: Seq[CheckpointBlock],
+                              accu: Seq[Transaction] = Seq.empty,
+                              snapshotReached: Boolean = false): Seq[Transaction] = {
+      parents match {
+        case Nil => accu
+        case cb :: tail if !snapshotReached && !isInSnapshot(cb) =>
+          getParentTransactions(
+            tail ++ getParents(cb),
+            accu ++ cb.transactions,
+            isInSnapshot(cb)
+          )
+        case cb :: tail if snapshotReached || isInSnapshot(cb) =>
+          getParentTransactions(
+            tail,
+            accu ++ cb.transactions,
+            snapshotReached
+          )
+      }
+    }
+    cbs.filterNot(isInSnapshot(_)).flatMap(cb => getParentTransactions(getParents(cb)))
+  }
+
+  def isConflictingWithOthers(cb: CheckpointBlock,
+                              others: Seq[CheckpointBlock])(implicit dao: DAO): Boolean = {
+    cb.transactions.intersect(getTransactionsTillSnapshot(others)).nonEmpty
+  }
+
+  def detectInternalTipsConflict(
+    inputTips: Seq[CheckpointCache]
+  )(implicit dao: DAO): Option[CheckpointCache] = {
+
+    def detect(
+      tips: Seq[CheckpointCache],
+      ancestryTransactions: Map[Transaction, String] = Map.empty
+    ): Option[CheckpointCache] = {
+      tips match {
+        case Nil => None
+        case CheckpointCache(Some(cb), children, height) :: _
+            if cb.transactions.toSet.intersect(ancestryTransactions.keySet).nonEmpty =>
+          val conflictingCBBaseHash = ancestryTransactions(
+            cb.transactions.toSet.intersect(ancestryTransactions.keySet).head
+          )
+          Some(
+            selectBlockToPreserve(
+              Seq(CheckpointCache(Some(cb), children, height)) ++ inputTips
+                .filter(ccd => ccd.checkpointBlock.exists(_.baseHash == conflictingCBBaseHash))
+            )
+          )
+        case CheckpointCache(Some(cb), _, _) :: tail =>
+          detect(tail, ancestryTransactions ++ cb.transactions.map(i => (i, cb.baseHash)))
+      }
+    }
+    detect(inputTips)
+  }
+
+  def hasTransactionInCommon(cbLeft: CheckpointBlock, cbRight: CheckpointBlock): Boolean = {
+    cbLeft.transactions.intersect(cbRight.transactions).nonEmpty
+  }
+
+  def selectBlockToPreserve(blocks: Iterable[CheckpointCache]): CheckpointCache = {
+    blocks.maxBy(
+      cb => (cb.children, cb.checkpointBlock.map(b => (b.signatures.size, b.baseHash)))
+    )
+
   }
 }
 

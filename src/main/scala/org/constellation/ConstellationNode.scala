@@ -14,13 +14,14 @@ import com.typesafe.config.ConfigFactory
 import com.typesafe.scalalogging.{Logger, StrictLogging}
 import constellation._
 import org.constellation.CustomDirectives.printResponseTime
-import org.constellation.consensus.{CrossTalkConsensus, HTTPNodeRemoteSender, NodeRemoteSender, RoundManager}
+import org.constellation.consensus.{CrossTalkConsensus, HTTPNodeRemoteSender, NodeRemoteSender}
 import org.constellation.crypto.KeyUtils
 import org.constellation.datastore.SnapshotTrigger
 import org.constellation.p2p.PeerAPI
 import org.constellation.primitives.Schema.{NodeState, ValidPeerIPData}
 import org.constellation.primitives._
 import org.constellation.util.{APIClient, HostPort, Metrics}
+import org.slf4j.MDC
 
 import scala.concurrent.{ExecutionContext, Future}
 import scala.util.{Failure, Success, Try}
@@ -163,7 +164,8 @@ object ConstellationNode extends StrictLogging {
           cliConfig = cliConfig,
           processingConfig =
             if (cliConfig.testMode) ProcessingConfig.testProcessingConfig.copy(maxWidth = 10)
-            else processingConfig
+            else processingConfig,
+          dataPollingManagerOn = config.getBoolean("constellation.dataPollingManagerOn")
         )
       )
     } match {
@@ -196,7 +198,8 @@ case class NodeConfig(
   attemptDownload: Boolean = false,
   allowLocalhostPeers: Boolean = false,
   cliConfig: CliConfig = CliConfig(),
-  processingConfig: ProcessingConfig = ProcessingConfig()
+  processingConfig: ProcessingConfig = ProcessingConfig(),
+  dataPollingManagerOn: Boolean = false
 )
 
 class ConstellationNode(
@@ -211,13 +214,13 @@ class ConstellationNode(
   dao.initialize(nodeConfig)
 
   val logger = Logger(s"ConstellationNode_${dao.publicKeyHash}")
+  MDC.put("node_id", dao.id.short)
 
   logger.info(
     s"Node init with API ${nodeConfig.httpInterface} ${nodeConfig.httpPort} peerPort: ${nodeConfig.peerHttpPort}"
   )
 
   dao.metrics = new Metrics(periodSeconds = dao.processingConfig.metricCheckInterval)
-
 
   val remoteSenderActor: ActorRef = system.actorOf(NodeRemoteSender.props(new HTTPNodeRemoteSender))
   val crossTalkConsensusActor: ActorRef =
@@ -346,6 +349,8 @@ class ConstellationNode(
     dao.generateRandomTX = true
   }
 
-  // val dataPollingManager = new DataPollingManager(60)
-
+  var dataPollingManager: DataPollingManager = _
+  if (nodeConfig.dataPollingManagerOn) {
+    dataPollingManager = new DataPollingManager(60)
+  }
 }

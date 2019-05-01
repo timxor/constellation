@@ -2,24 +2,16 @@ package org.constellation.consensus
 
 import java.util.concurrent.Semaphore
 
-import akka.actor.{ActorSystem, Props, Scheduler}
+import akka.actor.{ActorSystem, Props}
 import akka.stream.ActorMaterializer
 import akka.testkit.{TestActorRef, TestKit, TestProbe}
 import org.constellation._
-import org.constellation.consensus.CrossTalkConsensus.{
-  NotifyFacilitators,
-  ParticipateInBlockCreationRound,
-  StartNewBlockCreationRound
-}
+import org.constellation.consensus.CrossTalkConsensus.{NotifyFacilitators, ParticipateInBlockCreationRound, StartNewBlockCreationRound}
 import org.constellation.consensus.Round._
-import org.constellation.consensus.RoundManager.{
-  BroadcastLightTransactionProposal,
-  BroadcastUnionBlockProposal,
-  RoundInfo
-}
+import org.constellation.consensus.RoundManager.{BroadcastLightTransactionProposal,BroadcastSelectedUnionBlock, BroadcastUnionBlockProposal}
 import org.constellation.primitives.Schema.{NodeType, SignedObservationEdge}
 import org.constellation.primitives._
-import org.constellation.primitives.storage.CheckpointService
+import org.constellation.primitives.storage._
 import org.mockito.integrations.scalatest.IdiomaticMockitoFixture
 import org.scalatest.{BeforeAndAfter, FunSuiteLike, Matchers, OneInstancePerTest}
 
@@ -77,6 +69,15 @@ class RoundManagerTest
   dao.threadSafeMessageMemPool.pull(1) shouldReturn None
   dao.checkpointService shouldReturn mock[CheckpointService]
   dao.checkpointService.contains(*) shouldReturn true
+
+  dao.messageService shouldReturn mock[MessageService]
+  dao.messageService.arbitraryPool shouldReturn mock[StorageService[ChannelMessageMetadata]]
+  dao.messageService.arbitraryPool.toMapSync() shouldReturn Map.empty
+
+  dao.transactionService shouldReturn mock[TransactionService]
+  dao.transactionService.arbitraryPool shouldReturn mock[TransactionMemPool]
+  dao.transactionService.arbitraryPool.toMapSync() shouldReturn Map.empty
+
   dao.readyPeers(NodeType.Light) shouldReturn Map()
 
   val peerManagerProbe = TestProbe()
@@ -297,5 +298,22 @@ class RoundManagerTest
 
       roundManager.underlyingActor.closeRoundActor(round._1) was called
     }
+  }
+
+  test("it should pass BroadcastSelectedUnionBlock to parent actor") {
+    val cmd = mock[BroadcastSelectedUnionBlock]
+
+    roundManager ! cmd
+
+    roundManager.underlyingActor.passToParentActor(cmd) was called
+  }
+
+  test("it should pass SelectedUnionBlock to round actor") {
+    val cmd = mock[SelectedUnionBlock]
+    cmd.roundId shouldReturn RoundId("round1")
+
+    roundManager ! cmd
+
+    roundManager.underlyingActor.passToRoundActor(cmd) was called
   }
 }

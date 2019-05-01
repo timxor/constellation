@@ -48,17 +48,15 @@ case class PeerMetadata(
   resourceInfo: ResourceInfo
 )
 
-case class ResourceInfo(
-  maxMemory: Long = Runtime.getRuntime.maxMemory(),
-  cpuNumber: Int = Runtime.getRuntime.availableProcessors(),
-  diskUsableBytes: Long)
+case class ResourceInfo(maxMemory: Long = Runtime.getRuntime.maxMemory(),
+                        cpuNumber: Int = Runtime.getRuntime.availableProcessors(),
+                        diskUsableBytes: Long)
 
 case class RemovePeerRequest(host: Option[HostPort] = None, id: Option[Id] = None)
 
 case class UpdatePassword(password: String)
 
 object ProcessingConfig {
-
 
   val testProcessingConfig = ProcessingConfig(
     numFacilitatorPeers = 2,
@@ -220,17 +218,21 @@ class API()(implicit system: ActorSystem, val timeout: Timeout, val dao: DAO)
               }
           } ~
           path("messageService" / Segment) { channelId =>
-            complete(dao.messageService.getSync(channelId))
+            complete(dao.messageService.lookup(channelId).unsafeRunSync())
           } ~
-          path ("channelKeys") {
+          path("channelKeys") {
             complete(dao.channelService.toMapSync().keys.toSeq)
           } ~
-          path ("channel" / "genesis" / Segment) { channelId =>
+          path("channel" / "genesis" / Segment) { channelId =>
             complete(dao.channelService.getSync(channelId))
           } ~
           path("channel" / Segment) { channelHash =>
-            val res =
-              Snapshot.findLatestMessageWithSnapshotHash(0, dao.messageService.getSync(channelHash))
+            val msg = dao.messageService.memPool.getSync(channelHash)
+            val channelRes =
+              Snapshot.findLatestMessageWithSnapshotHash(0, msg)
+
+            val res = if(channelRes.isDefined || msg.isEmpty) channelRes
+            else Snapshot.findLatestMessageWithSnapshotHash(0, dao.messageService.lookup(msg.get.channelMessage.signedMessageData.hash).unsafeRunSync())
 
             val proof = res.flatMap { cmd =>
               cmd.snapshotHash.flatMap { snapshotHash =>
@@ -240,8 +242,6 @@ class API()(implicit system: ActorSystem, val timeout: Timeout, val dao: DAO)
                     File(dao.snapshotPath, snapshotHash).byteArray
                   )
                 }, "readSnapshotForMessage").toOption.map { storedSnapshot =>
-
-
                   val blocksInSnapshot = storedSnapshot.snapshot.checkpointBlocks.toList
                   val blockHashForMessage = cmd.blockHash.get
 
@@ -273,6 +273,12 @@ class API()(implicit system: ActorSystem, val timeout: Timeout, val dao: DAO)
             }
 
             complete(proof)
+          } ~
+          path("messages") {
+            complete(dao.channelStorage.getLastNMessages(20))
+          } ~
+          path("messages" / Segment) { channelId =>
+            complete(dao.channelStorage.getLastNMessages(20, Some(channelId)))
           } ~
           path("restart") { // TODO: Revisit / fix
             System.exit(0)

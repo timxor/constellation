@@ -33,21 +33,26 @@ object TransactionService {
   def apply(implicit dao: DAO, size: Int = 50000) = new TransactionService(dao, size)
 }
 
-class TransactionService(dao: DAO, size: Int = 50000) {
+class TransactionService(dao: DAO, size: Int = 50000) extends MerkleService[TransactionCacheData]{
+  val merklePool = new StorageService[Seq[String]](size)
+  val arbitraryPool = new TransactionMemPool(size)
   val memPool = new TransactionMemPool(size)
   val midDb: MidDbStorage[String, TransactionCacheData] = TransactionsMid(dao)
   val oldDb: DbStorage[String, TransactionCacheData] = TransactionsOld(dao)
 
   def migrateOverCapacity(): IO[Unit] = {
     midDb.pullOverCapacity()
-      .flatMap(_.map(tx => oldDb.put(tx.transaction.baseHash, tx)).sequence[IO, Unit])
+      .flatMap(_.map(tx => oldDb.put(tx.transaction.hash, tx)).sequence[IO, Unit])
       .map(_ => ())
   }
 
-  def lookup: String => IO[Option[TransactionCacheData]] =
+  override def lookup: String => IO[Option[TransactionCacheData]] =
     DbStorage.extendedLookup[String, TransactionCacheData](List(memPool, midDb, oldDb))
 
   def contains: String ⇒ IO[Boolean] =
     DbStorage.extendedContains[String, TransactionCacheData](List(memPool, midDb, oldDb))
+
+  override def findHashesByMerkleRoot(merkleRoot: String): IO[Option[Seq[String]]] =
+    merklePool.get(merkleRoot)
 }
 
