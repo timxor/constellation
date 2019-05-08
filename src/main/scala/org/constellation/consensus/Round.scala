@@ -127,7 +127,7 @@ class Round(roundData: RoundData, arbitraryTransactions: Seq[(Transaction, Int)]
       }
       scheduleArbitraryDataProposals(distance + 1)
 
-    case ResolveMajorityCheckpointBlock(_) => resolveMajorityCheckpointBlock()
+    case ResolveMajorityCheckpointBlock(_, triggeredFromTimeout) => resolveMajorityCheckpointBlock(triggeredFromTimeout)
 
     case AcceptMajorityCheckpointBlock(_) => acceptMajorityCheckpointBlock()
 
@@ -157,7 +157,7 @@ class Round(roundData: RoundData, arbitraryTransactions: Seq[(Transaction, Int)]
         "constellation.consensus.checkpoint-block-proposals-timeout",
         15.second),
       self,
-      ResolveMajorityCheckpointBlock
+      ResolveMajorityCheckpointBlock(roundData.roundId, triggeredFromTimeout = true)
     )
 
   private[consensus] def receivedAllTransactionProposals: Boolean =
@@ -269,12 +269,16 @@ class Round(roundData: RoundData, arbitraryTransactions: Seq[(Transaction, Int)]
     self ! blockProposal
   }
 
-  private[consensus] def resolveMajorityCheckpointBlock(): Unit = {
+  private[consensus] def resolveMajorityCheckpointBlock(triggeredFromTimeout: Boolean): Unit = {
+    dao.metrics.incrementMetric("resolveMajorityCheckpointBlockActorTriggeredFromTimeout_" + triggeredFromTimeout)
+
     majorityCheckpointBlock = if (checkpointBlockProposals.nonEmpty) {
       val sameBlocks = checkpointBlockProposals
         .groupBy(_._2.baseHash)
         .maxBy(_._2.size)
         ._2
+
+      dao.metrics.incrementMetric("resolveMajorityCheckpointBlockProposalCount_" + checkpointBlockProposals.size)
 
       val checkpointBlock = sameBlocks.values.foldLeft(sameBlocks.head._2)(_ + _)
 
@@ -283,7 +287,10 @@ class Round(roundData: RoundData, arbitraryTransactions: Seq[(Transaction, Int)]
       self ! selectedCheckpointBlock
 
       Some(checkpointBlock)
-    } else None
+    } else {
+      dao.metrics.incrementMetric("resolveMajorityCheckpointBlockProposalCount_0")
+      None
+    }
   }
 
   private[consensus] def acceptMajorityCheckpointBlock(): Unit = {
@@ -295,6 +302,8 @@ class Round(roundData: RoundData, arbitraryTransactions: Seq[(Transaction, Int)]
 
       val checkpointBlock = sameBlocks.head._2
 
+      dao.metrics.incrementMetric("acceptMajorityCheckpointBlockSelectedCount_" + selectedCheckpointBlocks.size)
+
       val finalFacilitators = selectedCheckpointBlocks.keySet.map(_.id).toSet
       val cache = CheckpointCache(Some(checkpointBlock),
         height = checkpointBlock.calculateHeight())
@@ -302,7 +311,10 @@ class Round(roundData: RoundData, arbitraryTransactions: Seq[(Transaction, Int)]
 
       dao.threadSafeSnapshotService.accept(cache)
       Some(checkpointBlock)
-    } else None
+    } else {
+      dao.metrics.incrementMetric("acceptMajorityCheckpointBlockSelectedCount_0")
+      None
+    }
 
     passToParentActor(StopBlockCreationRound(roundData.roundId, acceptedBlock))
   }
@@ -352,7 +364,7 @@ object Round {
   case object UnionProposals
   case class ArbitraryDataProposals(distance: Int)
 
-  case class ResolveMajorityCheckpointBlock(roundId: RoundId) extends RoundCommand
+  case class ResolveMajorityCheckpointBlock(roundId: RoundId, triggeredFromTimeout: Boolean = false) extends RoundCommand
 
   case class AcceptMajorityCheckpointBlock(roundId: RoundId) extends RoundCommand
 
