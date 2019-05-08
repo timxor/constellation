@@ -100,7 +100,8 @@ class RoundTest
     facilitatorId1,
     Seq(),
     Seq(),
-    Seq()
+    Seq(),
+    System.currentTimeMillis()
   )
 
   val cb1 = CheckpointBlock.createCheckpointBlock(Seq(tx1), Seq(), Seq(), Seq())(dao.keyPair)

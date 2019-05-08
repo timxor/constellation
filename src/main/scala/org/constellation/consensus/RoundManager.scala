@@ -86,6 +86,9 @@ class RoundManager(roundTimeout: FiniteDuration)(implicit dao: DAO)
 
     case cmd: StopBlockCreationRound =>
       rounds.get(cmd.roundId).fold {} { round =>
+        val elapsedS = (System.currentTimeMillis - round.startTime) / 1000
+        log.info(s"Stop block creation round, round time: ${elapsedS}s")
+
         round.timeoutScheduler.cancel()
         if (round.startedByThisNode) {
           ownRoundInProgress = false
@@ -175,7 +178,8 @@ class RoundManager(roundTimeout: FiniteDuration)(implicit dao: DAO)
                  arbitraryMessages: Seq[(ChannelMessage, Int)],
                  startedByThisNode: Boolean = false): Unit = {
     rounds += roundData.roundId -> RoundInfo(
-      generateRoundActor(roundData, arbitraryTransactions,arbitraryMessages, dao),
+      System.currentTimeMillis,
+      generateRoundActor(roundData, arbitraryTransactions, arbitraryMessages, dao),
       context.system.scheduler.scheduleOnce(roundTimeout,
                                             self,
                                             ResolveMajorityCheckpointBlock(roundData.roundId, triggeredFromTimeout = true)),
@@ -227,7 +231,8 @@ object RoundManager {
                lightPeers,FacilitatorId(dao.id),
                transactions,
                tips._1,
-               messages
+               messages,
+               System.currentTimeMillis()
              ),
              getArbitraryTransactionsWithDistance(allFacilitators,
                                         dao).filter(t => t._2 == 1),
@@ -294,6 +299,7 @@ object RoundManager {
     RoundId(java.util.UUID.randomUUID().toString)
 
   case class RoundInfo(
+    startTime: Long,
     roundActor: ActorRef,
     timeoutScheduler: Cancellable,
     startedByThisNode: Boolean = false

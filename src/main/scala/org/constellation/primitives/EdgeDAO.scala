@@ -216,7 +216,7 @@ class ThreadSafeSnapshotService(concurrentTipService: ConcurrentTipService) {
 
       val nextHeightInterval = lastSnapshotHeight + dao.processingConfig.snapshotHeightInterval
 
-      val canSnapshot = minTipHeight > (nextHeightInterval + dao.processingConfig.snapshotHeightDelayInterval)
+      val canSnapshot = minTipHeight >= (nextHeightInterval + dao.processingConfig.snapshotHeightDelayInterval)
 
       logger.info(s"Snapshot - minTipHeight=$minTipHeight < ( nextHeightInterval=$nextHeightInterval + snapshotHeightDelayInterval=${dao.processingConfig.snapshotHeightDelayInterval} )")
 

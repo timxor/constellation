@@ -93,7 +93,7 @@ case class ProcessingConfig(
   peerHealthCheckInterval: Int = 30,
   peerDiscoveryInterval: Int = 60,
   snapshotHeightInterval: Int = 2,
-  snapshotHeightDelayInterval: Int = 4,
+  snapshotHeightDelayInterval: Int = 0,
   snapshotInterval: Int = 25,
   checkpointLRUMaxSize: Int = 6000,
   transactionLRUMaxSize: Int = 35000,

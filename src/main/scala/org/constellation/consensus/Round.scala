@@ -391,7 +391,8 @@ object Round {
     facilitatorId: FacilitatorId,
     transactions: Seq[Transaction],
     tipsSOE: Seq[SignedObservationEdge],
-    messages: Seq[ChannelMessage]
+    messages: Seq[ChannelMessage],
+    startTime: Long
   )
 
   case class StopBlockCreationRound(roundId: RoundId, maybeCB: Option[CheckpointBlock])

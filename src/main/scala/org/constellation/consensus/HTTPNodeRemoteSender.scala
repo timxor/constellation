@@ -15,7 +15,8 @@ case class RoundDataRemote(
   facilitatorId: FacilitatorId,
   transactions: Seq[Transaction],
   tipsSOE: Seq[SignedObservationEdge],
-  messages: Seq[ChannelMessage]
+  messages: Seq[ChannelMessage],
+  startTime: Long,
 )
 
 class HTTPNodeRemoteSender(implicit val dao: DAO) extends NodeRemoteSender {
@@ -31,7 +32,8 @@ class HTTPNodeRemoteSender(implicit val dao: DAO) extends NodeRemoteSender {
         r.facilitatorId,
         r.transactions,
         r.tipsSOE,
-        r.messages
+        r.messages,
+        r.startTime,
       )
     )
   }

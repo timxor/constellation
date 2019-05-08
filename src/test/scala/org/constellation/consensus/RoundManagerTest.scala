@@ -134,7 +134,8 @@ class RoundManagerTest
       FacilitatorId(facilitatorId1),
       Seq(),
       Seq(),
-      Seq()
+      Seq(),
+      System.currentTimeMillis()
     )
     val cmd = mock[ParticipateInBlockCreationRound]
     cmd.roundData shouldReturn roundData
@@ -159,7 +160,8 @@ class RoundManagerTest
       FacilitatorId(facilitatorId1),
       Seq(),
       Seq(),
-      Seq()
+      Seq(),
+      System.currentTimeMillis()
     )
     val cmd = mock[ParticipateInBlockCreationRound]
     cmd.roundData shouldReturn roundData

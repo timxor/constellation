@@ -36,7 +36,8 @@ object BlockBuildingRoundRoute {
       r.facilitatorId,
       r.transactions,
       r.tipsSOE,
-      r.messages
+      r.messages,
+      r.startTime,
     )
   }
 }
