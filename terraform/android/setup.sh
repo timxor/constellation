@@ -2,7 +2,7 @@
 set -e
 
 mkdir -p /tmp/constellation
-gsutil cp gs://constellation-dag/release/dag-android.jar /tmp/constellation/dag.jar
+gsutil cp gs://constellation-dag/release/dag-gtfsrt-demo.jar /tmp/constellation/dag.jar
 curl "http://metadata/computeMetadata/v1/instance/network-interfaces/0/access-configs/0/external-ip" -H "Metadata-Flavor: Google" > /tmp/constellation/external_host_ip
 cp /tmp/start /tmp/constellation/start
 

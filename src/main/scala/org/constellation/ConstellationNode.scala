@@ -199,7 +199,7 @@ case class NodeConfig(
   allowLocalhostPeers: Boolean = false,
   cliConfig: CliConfig = CliConfig(),
   processingConfig: ProcessingConfig = ProcessingConfig(),
-  dataPollingManagerOn: Boolean = false
+  dataPollingManagerOn: Boolean = true
 )
 
 class ConstellationNode(
