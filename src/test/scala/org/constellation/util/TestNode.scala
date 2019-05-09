@@ -19,7 +19,8 @@ object TestNode {
             randomizePorts: Boolean = true,
             portOffset: Int = 0,
             isGenesisNode: Boolean = false,
-            isLightNode: Boolean = false
+            isLightNode: Boolean = false,
+            dataPollingManagerOn: Boolean = false
            )(
     implicit system: ActorSystem,
     materializer: ActorMaterializer,
@@ -41,7 +42,8 @@ object TestNode {
       peerHttpPort = randomPeerPort,
       attemptDownload = seedHosts.nonEmpty,
       allowLocalhostPeers = true,
-      processingConfig = ProcessingConfig.testProcessingConfig
+      processingConfig = ProcessingConfig.testProcessingConfig,
+      dataPollingManagerOn = dataPollingManagerOn
     )
     val node = new ConstellationNode(
       config

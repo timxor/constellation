@@ -45,17 +45,17 @@ class SingleNodeGenesisTest extends FlatSpec with BeforeAndAfterAll {
       randomizePorts = randomizePorts,
       portOffset = portOffset,
       seedHosts = Seq(),
-      isGenesisNode = isGenesisNode
+      isGenesisNode = isGenesisNode,
+      dataPollingManagerOn = true
     )
   }
 
-  //"Genesis created"
-  ignore should "verify the node has created genesis" in {
+  "Genesis created" should "verify the node has created genesis" in {
 
     val node = createNode(isGenesisNode = true)
     val api = node.getAPIClient()
 
-    //Thread.sleep(6000*1000)
+    Thread.sleep(6000*1000)
 
   }
 

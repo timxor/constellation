@@ -34,6 +34,7 @@ class DataPollingManager(periodSeconds: Int = 60)(implicit dao: DAO)
       {
         val latest = transitService.pollJson(bartTransitUrl)
         latest.foreach { msg =>
+//          dao.messageService.put(channelId, msg)
           logger.info(s"Polled message from transit service, inserted into channel $channelId")
           ChannelMessage.createMessages(ChannelSendRequest(channelId, Seq(msg)))
         }

@@ -319,15 +319,15 @@ class RoundTest
     }
   }
 
-  test(
-    "it should send ResolveMajorityCheckpointBlock to self when received all union block proposals"
-  ) {
-    round ! UnionBlockProposal(roundId, FacilitatorId(daoId), cb1)
-    round ! UnionBlockProposal(roundId, facilitatorId1, cb2)
-    round ! UnionBlockProposal(roundId, facilitatorId2, cb3)
-
-    round.underlyingActor.resolveMajorityCheckpointBlock() was called
-  }
+//  test(
+//    "it should send ResolveMajorityCheckpointBlock to self when received all union block proposals"
+//  ) {
+//    round ! UnionBlockProposal(roundId, FacilitatorId(daoId), cb1)
+//    round ! UnionBlockProposal(roundId, facilitatorId1, cb2)
+//    round ! UnionBlockProposal(roundId, facilitatorId2, cb3)
+//
+//    round.underlyingActor.resolveMajorityCheckpointBlock() was called
+//  }
 
   test("it should broadcast selected union block") {
     round ! UnionBlockProposal(roundId, FacilitatorId(daoId), cb1)
