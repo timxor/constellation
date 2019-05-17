@@ -262,8 +262,8 @@ class ConstellationNode(
     Http().bindAndHandle(routes, nodeConfig.httpInterface, nodeConfig.httpPort)
 
   val peerAPI = new PeerAPI(ipManager, crossTalkConsensusActor)
+
   val randomTXManager = new RandomTransactionManager(
-    crossTalkConsensusActor,
     dao.processingConfig.randomTransactionLoopTimeSeconds
   )
 

@@ -170,7 +170,7 @@ class RandomTransactionManager[T](nodeActor: ActorRef, periodSeconds: Int = 10)(
 
                 dao.threadSafeTXMemPool.put(tx)
 
-                dao.transactionService.memPool.putSync(
+                dao.transactionService.memPool.putSync(//TODO only put in pool if above true
                   tx.hash,
                   TransactionCacheData(
                     tx,

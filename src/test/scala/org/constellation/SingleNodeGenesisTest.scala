@@ -59,4 +59,32 @@ class SingleNodeGenesisTest extends FlatSpec with BeforeAndAfterAll {
 
   }
 
+  "Transaction mempools" should "have the same contents" in {//TODO see note about tx's pas mempool threshold getting into lru cache
+    val node = createNode(isGenesisNode = true)
+    val api = node.getAPIClient()
+    //Thread.sleep(6000*1000)//TODO set appropriate time window and/or use future
+    //query tx mempools
+  }
+
+  "CheckpointBlock creation" should "occur even when empty" in {
+    val node = createNode(isGenesisNode = true)
+    val api = node.getAPIClient()
+    //Thread.sleep(6000*1000)//TODO set appropriate time window and/or use future
+    //query cpb mempool
+  }
+
+  "CheckpointBlock contents" should "equal mempool contents" in {
+    val node = createNode(isGenesisNode = true)
+    val api = node.getAPIClient()
+    //Thread.sleep(6000*1000)//TODO set appropriate time window and/or use future
+    //query cpb mempool
+  }
+
+  "CheckpointBlock contents" should "equal mempool contents" in {
+    val node = createNode(isGenesisNode = true)
+    val api = node.getAPIClient()
+    //Thread.sleep(6000*1000)//TODO set appropriate time window and/or use future
+    //query cpb mempool
+  }
+
 }
