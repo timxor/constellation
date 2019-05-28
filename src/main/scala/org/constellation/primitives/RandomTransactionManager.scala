@@ -94,6 +94,7 @@ class RandomTransactionManager[T](nodeActor: ActorRef, periodSeconds: Int = 10)(
 
           val memPoolCount = dao.threadSafeTXMemPool.unsafeCount
 //          val memPoolCount = dao.transactionService.memPool.cacheSize()
+          println("transactionMemPoolSize"+ memPoolCount.toString)
           dao.metrics.updateMetric("transactionMemPoolSize", memPoolCount.toString)
 
           val haveBalance =
@@ -168,30 +169,34 @@ class RandomTransactionManager[T](nodeActor: ActorRef, periodSeconds: Int = 10)(
                 dao.metrics.incrementMetric("randomTransactionsGenerated")
                 dao.metrics.incrementMetric("sentTransactions")
 
-                dao.threadSafeTXMemPool.put(tx)
-
-                dao.transactionService.memPool.putSync(//TODO only put in pool if above true
-                  tx.hash,
-                  TransactionCacheData(
-                    tx,
-                    valid = true,
-                    inMemPool = true
+                val txAdded = dao.threadSafeTXMemPool.put(tx)
+                if (txAdded){
+                  dao.transactionService.memPool.putSync(//TODO only put in pool if above true
+                    tx.hash,
+                    TransactionCacheData(
+                      tx,
+                      valid = true,
+                      inMemPool = true
+                    )
                   )
-                )
+                  println("transactionMemPoolSize"+ memPoolCount.toString)
 
-                dao.peerInfo(NodeType.Full)
-                  .values
-                  .foreach { peerData ⇒
+
+                  dao.peerInfo(NodeType.Full)
+                    .values
+                    .foreach { peerData ⇒
+                      dao.metrics.incrementMetric("transactionPut")
+                      peerData.client.put("transaction", tx)
+                    }
+
+                  if (dao.peerInfo(NodeType.Light).nonEmpty) {
+                    val lightPeerData = dao.peerInfo(NodeType.Light).minBy(p ⇒ Distance.calculate(p._1, dao.id))._2
                     dao.metrics.incrementMetric("transactionPut")
-                    peerData.client.put("transaction", tx)
+                    dao.metrics.incrementMetric("transactionPutToLightNode")
+                    lightPeerData.client.put("transaction", tx)
                   }
-
-                if (dao.peerInfo(NodeType.Light).nonEmpty) {
-                  val lightPeerData = dao.peerInfo(NodeType.Light).minBy(p ⇒ Distance.calculate(p._1, dao.id))._2
-                  dao.metrics.incrementMetric("transactionPut")
-                  dao.metrics.incrementMetric("transactionPutToLightNode")
-                  lightPeerData.client.put("transaction", tx)
                 }
+
 
                 /*            // TODO: Change to transport layer call
     dao.peerManager ! APIBroadcast(

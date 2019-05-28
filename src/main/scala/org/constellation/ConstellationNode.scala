@@ -199,7 +199,8 @@ case class NodeConfig(
   allowLocalhostPeers: Boolean = false,
   cliConfig: CliConfig = CliConfig(),
   processingConfig: ProcessingConfig = ProcessingConfig(),
-  dataPollingManagerOn: Boolean = false
+  dataPollingManagerOn: Boolean = false,
+  randomTxRate: Option[Int] = None
 )
 
 class ConstellationNode(
@@ -263,8 +264,9 @@ class ConstellationNode(
 
   val peerAPI = new PeerAPI(ipManager, crossTalkConsensusActor)
 
-  val randomTXManager = new RandomTransactionManager(
-    dao.processingConfig.randomTransactionLoopTimeSeconds
+  val txRate = if (nodeConfig.randomTxRate.isDefined) nodeConfig.randomTxRate.get else dao.processingConfig.randomTransactionLoopTimeSeconds
+  val randomTXManager = new RandomTransactionManager(crossTalkConsensusActor,
+    txRate
   )
 
   def getIPData: ValidPeerIPData = {
