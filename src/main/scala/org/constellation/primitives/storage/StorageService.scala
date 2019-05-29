@@ -11,8 +11,10 @@ class StorageService[V](size: Int = 50000, expireAfterMinutes: Option[Int] = Non
   private val lruCache: Cache[String, V] = {
     val cacheWithStats = Scaffeine().recordStats()
 
-    val cache = expireAfterMinutes.map(mins => cacheWithStats.expireAfterAccess(mins.minutes))
-      .getOrElse(cacheWithStats.maximumSize(size))
+//    val cache = expireAfterMinutes.map(mins => cacheWithStats.expireAfterAccess(mins.minutes))
+//      .getOrElse(cacheWithStats.maximumSize(size))
+    
+    val cache = cacheWithStats
 
     cache.build[String, V]()
   }
