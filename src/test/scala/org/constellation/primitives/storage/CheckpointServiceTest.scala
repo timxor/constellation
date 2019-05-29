@@ -10,15 +10,16 @@ import org.constellation.primitives.Schema.{CheckpointCache, Height, SignedObser
 import org.constellation.primitives._
 import org.constellation.util.Metrics
 import org.constellation.{DAO, PeerMetadata}
+import org.mockito.{ArgumentMatchersSugar, IdiomaticMockito}
 import org.mockito.Mockito.doNothing
-import org.mockito.integrations.scalatest.IdiomaticMockitoFixture
 import org.scalatest.{BeforeAndAfter, FunSuite, Matchers}
 
 import scala.concurrent.ExecutionContext
 
 class CheckpointServiceTest
     extends FunSuite
-    with IdiomaticMockitoFixture
+    with IdiomaticMockito
+    with ArgumentMatchersSugar
     with Matchers
     with BeforeAndAfter {
 

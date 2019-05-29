@@ -31,22 +31,22 @@ class TransactionsMid(path: File, midCapacity: Int)(implicit ec: ExecutionContex
                                                          (path / "disk1" / "transactions_mid").path,
                                                        midCapacity)
 
-class TransactionMemPool(size: Int = 50000)
-    extends StorageService[TransactionCacheData](size, Some(240))
+class TransactionMemPool()
+    extends StorageService[TransactionCacheData](Some(240))
 
 object TransactionService {
-  def apply(implicit dao: DAO, size: Int = 50000) = new TransactionService(dao, size)
+  def apply(implicit dao: DAO) = new TransactionService(dao)
 }
 
-class TransactionMidPool(size: Int = 50000) extends TransactionMemPool(size)
-class TransactionOldPool(size: Int = 50000) extends TransactionMemPool(size)
+class TransactionMidPool() extends TransactionMemPool()
+class TransactionOldPool() extends TransactionMemPool()
 
-class TransactionService(dao: DAO, size: Int = 50000)
+class TransactionService(dao: DAO)
     extends MerkleService[TransactionCacheData]
     with StrictLogging {
-  val merklePool = new StorageService[Seq[String]](size)
-  val arbitraryPool = new TransactionMemPool(size)
-  val memPool = new TransactionMemPool(size)
+  val merklePool = new StorageService[Seq[String]]()
+  val arbitraryPool = new TransactionMemPool()
+  val memPool = new TransactionMemPool()
   val midDb: MidDbStorage[String, TransactionCacheData] = TransactionsMid(dao)
   val oldDb: DbStorage[String, TransactionCacheData] = TransactionsOld(dao)
 

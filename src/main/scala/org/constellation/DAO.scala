@@ -94,11 +94,11 @@ class DAO() extends NodeData with Genesis with EdgeDAO with SimpleWalletLike wit
     transactionHashStore = SwayDBDatastore.duplicateCheckStore(this, "transaction_hash_store")
     checkpointHashStore = SwayDBDatastore.duplicateCheckStore(this, "checkpoint_hash_store")
 
-    transactionService = TransactionService(this, processingConfig.transactionLRUMaxSize)
-    checkpointService = CheckpointService(this, processingConfig.checkpointLRUMaxSize)
+    transactionService = TransactionService(this)
+    checkpointService = CheckpointService(this)
     snapshotService = SnapshotService(this)
-    acceptedTransactionService = new AcceptedTransactionService(processingConfig.transactionLRUMaxSize)
-    addressService = new AddressService(processingConfig.addressLRUMaxSize)(() => metrics)
+    acceptedTransactionService = new AcceptedTransactionService()
+    addressService = new AddressService()(() => metrics)
   }
 
   lazy val concurrentTipService: ConcurrentTipService = new TrieBasedTipService(
