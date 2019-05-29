@@ -193,6 +193,14 @@ case class CheckpointBlock(
       val parent = dao.soeService.getSync(soeHash)
 
       if (parent.isEmpty) {
+
+        try {
+          throw new Exception("Just using this to get stack trace...")
+        } catch {
+          case e: Exception =>
+            println(s"ERROR: SOEHash $soeHash missing from soeService")
+            e.printStackTrace()
+        }
         dao.metrics.incrementMetric("parentSOEServiceQueryFailed")
       }
 
