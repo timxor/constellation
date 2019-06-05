@@ -304,10 +304,10 @@ class Round(roundData: RoundData,
 //    }
 
     val cb = CheckpointBlock.createCheckpointBlock(
-      transactions ++ resolvedTxs,
+      {transactions ++ resolvedTxs}.sortBy(_.hash),
       roundData.tipsSOE.map(soe => TypedEdgeHash(soe.hash, EdgeHashType.CheckpointHash, Some(soe.baseHash))),
-      messages ++ resolvedMessages,
-      notifications
+      {messages ++ resolvedMessages}.sortBy{_.signedMessageData.hash},
+      notifications.sortBy(_.hash)
     )(dao.keyPair)
     val blockProposal = UnionBlockProposal(roundData.roundId, FacilitatorId(dao.id), cb)
     passToParentActor(BroadcastUnionBlockProposal(roundData.peers, blockProposal))
