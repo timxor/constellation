@@ -117,6 +117,14 @@ class CheckpointService[F[_]: Sync : LiftIO](
       (s: String) => LiftIO[F].liftIO(DataResolver.resolveTransactionsDefaults(s).map(_.get))
     )
 
+  def fetchTxResolveOff(merkleRoot: String)(implicit dao: DAO): F[List[Transaction]] =
+    fetch[TransactionCacheData, Transaction](
+      merkleRoot,
+      transactionService,
+      (x: TransactionCacheData) => x.transaction,
+      (s: String) => LiftIO[F].liftIO(IO {None}.map(_.get))
+    )
+
   def fetchMessages(merkleRoot: String)(implicit dao: DAO): F[List[ChannelMessage]] =
     fetch[ChannelMessageMetadata, ChannelMessage](
       merkleRoot,
