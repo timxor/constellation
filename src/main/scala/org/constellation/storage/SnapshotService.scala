@@ -1,7 +1,7 @@
 package org.constellation.storage
 
 import cats.data.EitherT
-import cats.effect.{LiftIO, Sync}
+import cats.effect.{LiftIO, Sync, Timer}
 import cats.effect.concurrent.Ref
 import cats.implicits._
 import org.constellation.DAO
@@ -11,9 +11,11 @@ import org.constellation.primitives.Schema.{CheckpointCache, NodeState}
 import org.constellation.primitives.Schema.NodeState.NodeState
 import org.constellation.util.Metrics
 
+import scala.concurrent.duration._
+
 import scala.util.Try
 
-class SnapshotService[F[_]: Sync : LiftIO](
+class SnapshotService[F[_]: Sync : LiftIO : Timer](
   concurrentTipService: ConcurrentTipService,
   addressService: AddressService[F],
   checkpointService: CheckpointService[F],
@@ -22,6 +24,8 @@ class SnapshotService[F[_]: Sync : LiftIO](
   import constellation._
 
   implicit val shadowDao: DAO = dao
+
+  val timers: Ref[F, Map[String, Long]] = Ref.unsafe(Map())
 
   val acceptedCBSinceSnapshot: Ref[F, Seq[String]] = Ref.unsafe(Seq())
   val syncBuffer: Ref[F, Seq[CheckpointCache]] = Ref.unsafe(Seq())
@@ -106,6 +110,7 @@ class SnapshotService[F[_]: Sync : LiftIO](
 
     _ <- EitherT.liftF(snapshot.set(nextSnapshot))
 
+    _ <- EitherT.liftF(timers.get.flatTap(m => Sync[F].delay( println(m) ))) // DEBUG
   } yield ()
 
   def updateAcceptedCBSinceSnapshot(cb: CheckpointBlock): F[Unit] = {
@@ -231,7 +236,7 @@ class SnapshotService[F[_]: Sync : LiftIO](
       } else {
         dao.metrics.incrementMetricAsync(Metrics.snapshotCount) *>
           writeSnapshotToDisk(currentSnapshot) *>
-          applyAfterSnapshot(currentSnapshot)
+            applyAfterSnapshot(currentSnapshot)
       }
     }
   }
@@ -255,28 +260,30 @@ class SnapshotService[F[_]: Sync : LiftIO](
             )
           }
       }
+      .void
   }
 
   private def applyAfterSnapshot(currentSnapshot: Snapshot): F[Unit] = {
-    currentSnapshot
-      .checkpointBlocks
-      .toList
-      .map(checkpointService.fullData)
-      .sequence
-      .map(_.map(_.flatMap(_.checkpointBlock)).sequence)
-      .map(_.map(_.flatMap(_.transactions.toList.flatMap(t => List(t.src, t.dst))).toSet))
-      .flatMap { addresses =>
-        addressService.lockForSnapshot(
-          addresses.get,
+    val start = Timer[F].clock.realTime(MILLISECONDS).flatMap(c => timers.update(_ + ("applyAfterSnapshot" -> c)))
+
+    val op = currentSnapshot
+        .checkpointBlocks
+        .toList
+        .map(checkpointService.fullData)
+        .sequence
+        .map(_.map(_.flatMap(_.checkpointBlock)).sequence)
+        .map(_.map(_.flatMap(_.transactions.toList.flatMap(t => List(t.src, t.dst))).toSet))
+        .flatMap { addresses =>
           Sync[F].delay(Snapshot.acceptSnapshot(currentSnapshot)) *>
             totalNumCBsInSnapshots.update(_ + currentSnapshot.checkpointBlocks.size) *>
-            totalNumCBsInSnapshots.get.flatTap { total =>
-              dao.metrics.updateMetricAsync("totalNumCBsInShapshots", total.toString)
-            } *>
+            totalNumCBsInSnapshots.get.flatTap { total => dao.metrics.updateMetricAsync("totalNumCBsInShapshots", total.toString) } *>
             checkpointService.applySnapshot(currentSnapshot.checkpointBlocks.toList) *>
             dao.metrics.updateMetricAsync(Metrics.lastSnapshotHash, currentSnapshot.hash)
-          )
-      }
+        }
+
+    val end = Timer[F].clock.realTime(MILLISECONDS).flatMap(c => timers.update(t => t + ("applyAfterSnapshot" -> (c - t("applyAfterSnapshot")))))
+
+    start *> op.flatTap(_ => end)
   }
 
   private def updateMetricsAfterSnapshot(): F[Unit] = {
@@ -293,13 +300,12 @@ class SnapshotService[F[_]: Sync : LiftIO](
 }
 
 object SnapshotService {
-  def apply[F[_]: Sync : LiftIO](
+  def apply[F[_]: Sync : LiftIO : Timer](
     concurrentTipService: ConcurrentTipService,
     addressService: AddressService[F],
     checkpointService: CheckpointService[F],
     dao: DAO
-  ) =
-    new SnapshotService[F](concurrentTipService, addressService, checkpointService, dao)
+  ) = new SnapshotService[F](concurrentTipService, addressService, checkpointService, dao)
 }
 
 sealed trait SnapshotError

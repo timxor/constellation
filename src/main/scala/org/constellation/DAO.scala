@@ -6,7 +6,7 @@ import akka.pattern.ask
 import akka.stream.ActorMaterializer
 import akka.util.Timeout
 import better.files.File
-import cats.effect.{ContextShift, IO}
+import cats.effect.{ContextShift, IO, Timer}
 import com.typesafe.scalalogging.StrictLogging
 import constellation._
 import org.constellation.crypto.SimpleWalletLike
@@ -101,6 +101,7 @@ class DAO() extends NodeData with Genesis with EdgeDAO with SimpleWalletLike wit
 
       new AddressService[IO]()
     }
+    implicit val timer: Timer[IO] = IO.timer(edgeExecutionContext)
     snapshotService = SnapshotService[IO](concurrentTipService, addressService, checkpointService, this)
   }
 

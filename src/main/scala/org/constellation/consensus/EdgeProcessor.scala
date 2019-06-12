@@ -497,7 +497,7 @@ object Snapshot extends StrictLogging {
         .foreach { merkle =>
           // TODO: wkoszycki this fails when chained with IO
             val txs = dao.checkpointService.fetchTransactions(merkle).unsafeRunSync()
-            txs.map(t => dao.addressService.transferSnapshot(t)).sequence.unsafeRunSync()
+            txs.map(t => dao.addressService.lockForSnapshot(Set(t.src, t.dst), dao.addressService.transferSnapshot(t).void)).sequence.unsafeRunSync()
             dao.transactionService.applySnapshot(txs.map(TransactionCacheData(_)), merkle).unsafeRunSync()
         }
       dao.checkpointService.applySnapshot(List(cb.baseHash)).unsafeRunSync()
