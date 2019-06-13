@@ -257,7 +257,6 @@ object RoundManager {
                         (implicit F: Concurrent[IO]): Option[(RoundData, Seq[(Transaction, Int)], Seq[(ChannelMessage, Int)])] = {
     val transactions = dao.transactionService.pullForConsensusSafe(dao.minCheckpointFormationThreshold, lock).unsafeRunSync()
     if (transactions.nonEmpty) {
-
       dao
         .pullTips(dao.readyFacilitatorsAsync.unsafeRunSync())
         .map { tips =>

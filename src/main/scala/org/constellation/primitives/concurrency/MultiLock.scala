@@ -6,7 +6,7 @@ import cats.implicits._
 import scala.collection.concurrent.TrieMap
 
 class MultiLock[F[_]: Concurrent, K] {
-
+  println("Here")
   import cats.effect.concurrent.Semaphore
 
   private[this] val locks = TrieMap.empty[K, Semaphore[F]]
