@@ -1,4 +1,5 @@
 package org.constellation
+import scala.concurrent.Future
 
 object Thing extends App {
   import cats.Parallel
@@ -8,7 +9,11 @@ object Thing extends App {
 
   import scala.concurrent.ExecutionContext
   import scala.concurrent.duration._
+  import scala.concurrent.ExecutionContext.Implicits.global
+  import cats.effect.{ContextShift, IO}
 
+  import scala.concurrent.ExecutionContext.Implicits.global
+  import scala.concurrent.Future
   // Needed for getting a Concurrent[IO] instance
   implicit val ctx = IO.contextShift(ExecutionContext.global)
   // Needed for `sleep`
@@ -22,7 +27,7 @@ object Thing extends App {
         _ <- s.acquire
         y <- s.available
         _ <- F.delay(println(s"$name >> Started | Availability: $y"))
-        _ <- timer.sleep(3.seconds)
+        _ <- timer.sleep(0.1.seconds)
         _ <- s.release
         z <- s.available
         _ <- F.delay(println(s"$name >> Done | Availability: $z"))
@@ -38,4 +43,5 @@ object Thing extends App {
       _  <- List(r1.use, r2.use, r3.use).parSequence.void
     } yield ()
 
+  Future.sequence(List(program.unsafeToFuture()))
 }
