@@ -10,8 +10,6 @@ import io.chrisdavenport.log4cats.slf4j.Slf4jLogger
 import org.constellation.{ConstellationContextShift, ConstellationExecutionContext, DAO, Fixtures}
 import org.constellation.primitives.{Transaction, TransactionCacheData}
 import org.constellation.storage.ConsensusStatus.ConsensusStatus
-import org.constellation.storage.transactions.TransactionStatus
-import org.constellation.storage.transactions.TransactionStatus.TransactionStatus
 import org.constellation.util.Metrics
 import org.mockito.{ArgumentMatchersSugar, IdiomaticMockito}
 import org.mockito.cats.IdiomaticMockitoCats

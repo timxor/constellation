@@ -12,8 +12,7 @@ import org.constellation.p2p.{Cluster, PeerData}
 import org.constellation.primitives.Schema.NodeState.NodeState
 import org.constellation.primitives.Schema.{AddressCacheData, Id, NodeState, NodeType}
 import org.constellation.storage.ConsensusStatus.ConsensusStatus
-import org.constellation.storage.transactions.TransactionStatus.TransactionStatus
-import org.constellation.storage.transactions.{TransactionGossiping, TransactionStatus}
+import org.constellation.storage.transactions.TransactionGossiping
 import org.constellation.storage.{AddressService, ConsensusStatus, TransactionService}
 import org.constellation.util.Distance
 import org.constellation.{ConstellationContextShift, ConstellationExecutionContext, DAO}

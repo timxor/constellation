@@ -7,7 +7,6 @@ import org.constellation.DAO
 import org.constellation.primitives.Schema.{CheckpointCache, SignedObservationEdgeCache}
 import org.constellation.primitives.{ChannelMessageMetadata, Observation, TransactionCacheData}
 import org.constellation.storage.ConsensusStatus
-import org.constellation.storage.transactions.TransactionStatus
 import org.constellation.util.{Distance, PeerApiClient}
 
 import scala.concurrent.duration._

@@ -15,7 +15,6 @@ import org.constellation.crypto.KeyUtils.makeKeyPair
 import org.constellation.p2p.{Cluster, PeerData, PeerNotification}
 import org.constellation.primitives.Schema._
 import org.constellation.primitives._
-import org.constellation.storage.transactions.TransactionStatus
 import org.constellation.util.{APIClient, HostPort, Metrics}
 import org.constellation.{
   ConstellationContextShift,
