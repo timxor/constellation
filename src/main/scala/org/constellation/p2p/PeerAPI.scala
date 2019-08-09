@@ -252,7 +252,7 @@ class PeerAPI(override val ipManager: IPManager[IO])(
       () => new ConsensusRoute(dao.consensusManager, dao.snapshotService).createBlockBuildingRoundRoutes()
     )
 
-  private[p2p] val mixedEndpoints = {
+  private[p2p] val mixedEndpoints = (id: IO[Option[Id]]) => {
     path("transaction") {
       put {
         entity(as[TransactionGossip]) { gossip =>
@@ -270,9 +270,23 @@ class PeerAPI(override val ipManager: IPManager[IO])(
             _ <- dao.metrics.incrementMetricAsync[IO]("transactionGossipingSent")
           } yield ()
 
-          rebroadcast.unsafeRunAsyncAndForget()
+          val chain = gossip.tx.valid
+            .pure[IO]
+            .ifM(
+              StatusCodes.OK.pure[IO].flatTap(_ => IO.delay(rebroadcast.unsafeRunAsyncAndForget())),
+              id.flatMap { id =>
+                val observation =
+                  Observation
+                    .create(id.get, ProposalOfInvalidTransaction(gossip.tx), System.currentTimeMillis())(dao.keyPair)
 
-          complete(StatusCodes.OK)
+                dao.metrics.incrementMetricAsync[IO]("transactionRXByPeerAPI_invalid") *>
+                  dao.observationService.put(observation)
+              }
+            )
+
+          onSuccess(chain.unsafeToFuture) { statusCode =>
+            complete(statusCode)
+          }
         }
       }
     }
@@ -280,6 +294,7 @@ class PeerAPI(override val ipManager: IPManager[IO])(
 
   def routes(address: InetSocketAddress): Route = withTimer("peer-api") {
     // val id = ipLookup(address) causes circular dependencies and cluster with 6 nodes unable to start due to timeouts. Consider reopen #391
+    val id = ipLookup(address)
     // TODO: pass id down and use it if needed
     decodeRequest {
       encodeResponse {
@@ -287,7 +302,7 @@ class PeerAPI(override val ipManager: IPManager[IO])(
         signEndpoints ~ commonEndpoints ~
           withSimulateTimeout(dao.simulateEndpointTimeout)(ConstellationExecutionContext.edge) {
             enforceKnownIP(address) {
-              getEndpoints(address) ~ postEndpoints ~ mixedEndpoints ~ blockBuildingRoundRoute
+              getEndpoints(address) ~ postEndpoints ~ mixedEndpoints(id) ~ blockBuildingRoundRoute
             }
           }
       }
@@ -313,12 +328,12 @@ class PeerAPI(override val ipManager: IPManager[IO])(
       }
     }
 
-  private def ipLookup(address: InetSocketAddress): Option[Schema.Id] = {
+  private def ipLookup(address: InetSocketAddress): IO[Option[Schema.Id]] = {
     val ip = address.getAddress.getHostAddress
 
     def sameHost(p: PeerData) = p.peerMetadata.host == ip
 
-    dao.peerInfo.unsafeRunSync().find(p => sameHost(p._2)).map(_._1)
+    dao.peerInfo.map(_.find(p => sameHost(p._2)).map(_._1))
   }
 
   def exceptionHandler: ExceptionHandler =

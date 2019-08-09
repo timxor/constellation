@@ -5,6 +5,7 @@ import akka.http.scaladsl.model.StatusCodes
 import akka.http.scaladsl.testkit.ScalatestRouteTest
 import better.files.File
 import cats.effect.IO
+import cats.implicits._
 import com.softwaremill.sttp.Response
 import constellation._
 import de.heikoseeberger.akkahttpjson4s.Json4sSupport
@@ -196,7 +197,7 @@ class PeerAPITest
 
           val tx = createTransaction(a.address, b.address, 5L, a)
 
-          Put(s"/transaction", TransactionGossip(tx)) ~> peerAPI.mixedEndpoints ~> check {
+          Put(s"/transaction", TransactionGossip(tx)) ~> peerAPI.mixedEndpoints(dao.id.some.pure[IO]) ~> check {
             dao.transactionGossiping.observe(*).was(called)
           }
         }
@@ -218,7 +219,7 @@ class PeerAPITest
           dao.transactionGossiping.selectPeers(tcd)(scala.util.Random) shouldReturnF Set(id)
           dao.peerInfo shouldReturnF Map(id -> peerData)
 
-          Put(s"/transaction", TransactionGossip(tx)) ~> peerAPI.mixedEndpoints ~> check {
+          Put(s"/transaction", TransactionGossip(tx)) ~> peerAPI.mixedEndpoints(dao.id.some.pure[IO]) ~> check {
             peerData.client.putAsync(*, *, *)(*).was(called)
           }
         }
@@ -234,7 +235,7 @@ class PeerAPITest
 
           val tx = createTransaction(a.address, b.address, 5L, a)
 
-          Put(s"/transaction", TransactionGossip(tx)) ~> peerAPI.mixedEndpoints ~> check {
+          Put(s"/transaction", TransactionGossip(tx)) ~> peerAPI.mixedEndpoints(dao.id.some.pure[IO]) ~> check {
             status shouldEqual StatusCodes.OK
           }
         }

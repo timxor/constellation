@@ -6,6 +6,7 @@ import org.constellation.primitives.Schema.Id
 import org.constellation.storage.ConsensusObject
 import org.constellation.util.Signable
 import constellation._
+import org.constellation.consensus.Consensus.RoundId
 
 sealed trait ObservationEvent
 
@@ -31,13 +32,13 @@ object Observation {
   }
 }
 
-// TODO: Add specific fields like consensus round or snapshot hash
 case class CheckpointBlockWithMissingParents() extends ObservationEvent
 
-case class RequestTimeoutOnConsensus() extends ObservationEvent
+case class RequestTimeoutOnConsensus(roundId: RoundId) extends ObservationEvent
 
 case class RequestTimeoutOnResolving() extends ObservationEvent
 
-case class SnapshotMisalignment() extends ObservationEvent
+// TODO: Uncomment and use once misalignment will be deterministic
+// case class SnapshotMisalignment() extends ObservationEvent
 
-case class ProposalOfInvalidTransaction() extends ObservationEvent
+case class ProposalOfInvalidTransaction(tx: Transaction) extends ObservationEvent
