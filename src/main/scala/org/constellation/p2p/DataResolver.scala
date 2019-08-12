@@ -5,7 +5,12 @@ import com.typesafe.scalalogging.StrictLogging
 import constellation._
 import org.constellation.DAO
 import org.constellation.primitives.Schema.{CheckpointCache, SignedObservationEdgeCache}
-import org.constellation.primitives.{ChannelMessageMetadata, Observation, TransactionCacheData}
+import org.constellation.primitives.{
+  ChannelMessageMetadata,
+  Observation,
+  RequestTimeoutOnResolving,
+  TransactionCacheData
+}
 import org.constellation.storage.ConsensusStatus
 import org.constellation.util.{Distance, PeerApiClient}
 
@@ -77,7 +82,12 @@ class DataResolver extends StrictLogging {
                 s"Failed to resolve with host=${head.client.hostPortForLogging}, trying next peer",
                 e
               )
-              makeAttempt(tail, allPeers, errorsSoFar + 1)
+
+              // TODO: How to make sure the error is a timeout error?
+              val observation =
+                Observation.create(head.client.id, RequestTimeoutOnResolving(), System.currentTimeMillis())(dao.keyPair)
+              dao.observationService.put(observation) *>
+                makeAttempt(tail, allPeers, errorsSoFar + 1)
           }
 
       }
