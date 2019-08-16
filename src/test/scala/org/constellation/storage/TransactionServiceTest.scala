@@ -29,6 +29,7 @@ class TransactionServiceTest
   implicit val logger: Logger[IO] = Slf4jLogger.getLogger[IO]
 
   var dao: DAO = _
+  var txChain: TransactionChainService[IO] = _
   var txService: TransactionService[IO] = _
 
   val hash = "ipsum"
@@ -37,7 +38,8 @@ class TransactionServiceTest
 
   before {
     dao = mockDAO
-    txService = new TransactionService[IO](dao)
+    txChain = TransactionChainService[IO]
+    txService = new TransactionService[IO](txChain, dao)
   }
 
   "put" - {
