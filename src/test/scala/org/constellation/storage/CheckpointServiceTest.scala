@@ -8,6 +8,7 @@ import cats.implicits._
 import com.typesafe.scalalogging.Logger
 import constellation.createTransaction
 import constellation.createDummyTransaction
+import io.chrisdavenport.log4cats.SelfAwareStructuredLogger
 import io.chrisdavenport.log4cats.slf4j.Slf4jLogger
 import org.constellation.consensus.FinishedCheckpoint
 import org.constellation.crypto.KeyUtils
@@ -33,6 +34,7 @@ class CheckpointServiceTest
 
   implicit val kp: KeyPair = makeKeyPair()
   implicit var dao: DAO = _
+  implicit val unsafeLogger: SelfAwareStructuredLogger[IO] = Slf4jLogger.getLogger[IO]
 
   before {
     soe.baseHash shouldReturn "abc"
@@ -257,7 +259,8 @@ class CheckpointServiceTest
     }
     dao.messageService shouldReturn ms
 
-    val ts = new TransactionService[IO](dao)
+    val txChain = TransactionChainService[IO]
+    val ts = new TransactionService[IO](txChain, dao)
     dao.transactionService shouldReturn ts
 
     val cts = mock[ConcurrentTipService[IO]]
