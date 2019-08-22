@@ -62,7 +62,6 @@ abstract class ConsensusService[F[_]: Concurrent: Logger, A <: ConsensusObject]
     case ConsensusStatus.Unknown =>
       withLock("unknownUpdate", unknown.put(a.hash, a))
         .flatTap(_ => Logger[F].debug(s"ConsensusService unknownPut with hash=${a.hash} - with checkpoint hash=${cpc.map(c => c.checkpointBlock.map(_.baseHash))} - with CheckpointCache=${cpc}"))
-    case _ => new Exception("Unknown consensus status").raiseError[F, A]
   }
 
   def update(key: String, fn: A => A, empty: => A, as: ConsensusStatus): F[A] = as match {
