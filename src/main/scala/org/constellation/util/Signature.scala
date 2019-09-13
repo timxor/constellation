@@ -109,12 +109,15 @@ trait SignHelpExt {
     dst: String,
     amount: Long,
     keyPair: KeyPair,
+    prevTxCount: Long = 0,
     normalized: Boolean = true,
-    dummy: Boolean = false
+    dummy: Boolean = false,
+    fee: Long = 0L,
+    signature: Array[Byte] = Array()
   ): Transaction = {
     val amountToUse = if (normalized) amount * Schema.NormalizationFactor else amount
 
-    val txData = TransactionEdgeData(amount = amountToUse)
+    val txData = TransactionEdgeData(amount = amountToUse, fee = Some(fee))
 
     val oe = ObservationEdge(
       Seq(
@@ -126,7 +129,7 @@ trait SignHelpExt {
 
     val soe = signedObservationEdge(oe)(keyPair)
 
-    Transaction(Edge(oe, soe, txData), "", 0, dummy)
+    Transaction(Edge(oe, soe, txData), "", prevTxCount, dummy, signature)
   }
 
   def createDummyTransaction(src: String, dst: String, keyPair: KeyPair): Transaction =

@@ -40,7 +40,8 @@ object TransactionCacheData {
   def apply(tx: Transaction): TransactionCacheData = TransactionCacheData(transaction = tx)
 }
 
-case class Transaction(edge: Edge[TransactionEdgeData], previousHash: String, count: Long, isDummy: Boolean = false) {
+case class Transaction(edge: Edge[TransactionEdgeData], previousHash: String, count: Long, isDummy: Boolean = false,
+                       signature: Array[Byte] = Array()) {
 
   def valid(implicit dao: DAO): Boolean =
     TransactionValidatorNel.validateTransaction(this).isValid

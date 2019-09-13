@@ -99,7 +99,9 @@ package object constellation extends POWExt with SignHelpExt with KeySerializeJS
 
     def j: String = json
 
-    def jsonSave(f: String): Unit = File(f).writeText(json)
+    def jsonSave(f: String): Unit = File(f).appendLine(json)
+
+    def jsonAppend(f: String): Unit = File(f).appendLine(json)
   }
 
   implicit class KryoSerExt(anyRef: AnyRef) {

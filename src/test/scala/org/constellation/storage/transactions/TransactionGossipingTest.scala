@@ -47,7 +47,7 @@ class TransactionGossipingTest
     val txService = spy(new TransactionService[IO](txChain, dao))
     val gossiping = new TransactionGossiping[IO](txService, 2, dao)
 
-    val t = constellation.createTransaction("a", "b", 1L, Fixtures.tempKey, false)
+    val t = constellation.createTransaction("a", "b", 1L, Fixtures.tempKey, 0L, false)
     val tx = TransactionCacheData(transaction = t, path = Set(Fixtures.id2, Fixtures.id3))
 
     gossiping.observe(tx).unsafeRunSync

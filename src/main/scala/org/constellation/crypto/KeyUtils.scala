@@ -1,13 +1,21 @@
 package org.constellation.crypto
 
+import java.io.ByteArrayInputStream
+import java.math.BigInteger
+import java.security.cert.CertificateFactory
 import java.security.spec.{ECGenParameterSpec, PKCS8EncodedKeySpec, X509EncodedKeySpec}
 import java.security.{KeyFactory, SecureRandom, _}
-import java.util.Base64
+import java.util.{Base64, Date}
 
 import better.files.File
 import com.google.common.hash.Hashing
 import com.typesafe.scalalogging.StrictLogging
+import org.bouncycastle.asn1.x500.{X500Name, X500NameBuilder}
+import org.bouncycastle.asn1.x500.style.BCStyle
+import org.bouncycastle.asn1.x509.SubjectPublicKeyInfo
+import org.spongycastle.cert.X509v1CertificateBuilder
 import org.spongycastle.jce.provider.BouncyCastleProvider
+import org.spongycastle.operator.jcajce.JcaContentSignerBuilder
 
 /**
   * Need to compare this to:
@@ -34,7 +42,7 @@ object KeyUtils extends StrictLogging {
     import java.security.Security
     val provider = new org.spongycastle.jce.provider.BouncyCastleProvider()
     val ret = Security.insertProviderAt(provider, 1)
-    logger.info(s"Insert provider return $ret")
+    logger.debug(s"Insert provider return $ret")
     provider
   }
 
@@ -211,9 +219,9 @@ object KeyUtils extends StrictLogging {
   }
 
   // TODO: Update to use encrypted wallet see below
-  def loadDefaultKeyPair(): KeyPair = {
+  def loadDefaultKeyPair(keyPath: String = ".dag/key"): KeyPair = {
     import constellation._
-    val keyPairFile = File(".dag/key")
+    val keyPairFile = File(keyPath)
     val keyPair: KeyPair =
       if (keyPairFile.notExists) {
         logger.warn(
@@ -239,101 +247,98 @@ object KeyUtils extends StrictLogging {
 
 }
 
-/*
 
-object WalletKeyStore {
+//object WalletKeyStore {
+//
+//  def makeWalletKeyStore(
+//                          validityInDays: Int = 500000,
+//                          orgName: String = "test",
+//                          orgUnitName: String = "test",
+//                          localityName: String = "test",
+//                          password: Array[Char],
+//                          numECDSAKeys: Int = 1000,
+//                          certEntryName: String = "test_cert",
+//                          rsaEntryName: String = "test_rsa",
+//                          ecdsaEntryNamePrefix: String = "ecdsa",
+//                          saveCertTo: Option[File] = None,
+//                          savePairsTo: Option[File] = None,
+//                          sslKeySize: Int = 4096
+//                        ): (KeyStore, KeyStore) = {
+//    import java.security.Security
+//    // Note this requires JDK 8u151 +
+//    // https://stackoverflow.com/questions/6481627/java-security-illegal-key-size-or-default-parameters
+//    Security.setProperty("crypto.policy", "unlimited")
+//    // java.lang.SecurityException: JCE cannot authenticate the provider SC
+//    // Use BC for now, for some reason SC not working. Just google it theres a fix.
+//    val bcProvider = new org.bouncycastle.jce.provider.BouncyCastleProvider()
+//
+//    val prov = bcProvider // makeProvider
+//    Security.insertProviderAt(prov, 1)
+//    val keyGen: KeyPairGenerator = KeyPairGenerator.getInstance("RSA", prov)
+//    keyGen.initialize(sslKeySize)
+//    val keyPair = keyGen.generateKeyPair
+//    val startDate = new Date(System.currentTimeMillis() - 24 * 60 * 60 * 1000)
+//    val endDate = new Date(System.currentTimeMillis() + validityInDays * 24 * 60 * 60 * 1000)
+//
+//    val nameBuilder = new X500NameBuilder(BCStyle.INSTANCE)
+//    nameBuilder.addRDN(BCStyle.O,orgName)
+//    nameBuilder.addRDN(BCStyle.OU,orgUnitName)
+//    nameBuilder.addRDN(BCStyle.L,localityName)
+//
+//    val x500Name: X500Name = nameBuilder.build()
+//    val random = new SecureRandom()
+//
+//    val subjectPublicKeyInfo = SubjectPublicKeyInfo.getInstance(keyPair.getPublic.getEncoded)
+//    val v1CertGen = new X509v1CertificateBuilder(x500Name, BigInteger.valueOf(random.nextLong()), startDate, endDate)//(x500Name, BigInteger.valueOf(random.nextLong()),startDate,endDate,x500Name,subjectPublicKeyInfo);
+//
+//    val sigGen = new JcaContentSignerBuilder("SHA256WithRSAEncryption")
+//      .setProvider(prov).build(keyPair.getPrivate)
+//
+//    val x509CertificateHolder = v1CertGen.build(sigGen)
+//
+//    val certf = CertificateFactory.getInstance("X.509")
+//    val cert = certf.generateCertificate(new ByteArrayInputStream(x509CertificateHolder.getEncoded))
+//
+//    // There's another solution here: https://stackoverflow.com/questions/13894699/java-how-to-store-a-key-in-keystore
+//    // Maybe worth looking at we'll see. This works for now.
+//    // Theres a lot of different keystores we actually need to support.
+//    // PKCS12 for the SSL certs (between nodes unless they get a proper cert from lets encrypt) is easy
+//    // BKS is also easy
+//    // There's a lot more and more details to get into. This is pretty complicated but this can serve
+//    // As an initial example to at least get the right classes in place.
+//    val ks: KeyStore = KeyStore.getInstance("PKCS12", bcProvider)
+//    ks.load(null, password)
+//    // https://stackoverflow.com/questions/6656263/why-do-i-get-the-error-cannot-store-non-privatekeys-when-creating-an-ssl-socke
+//    // ^ in case next step is confusing:
+//
+//    import java.io.FileOutputStream
+//    import java.security.KeyStore
+//    val bks = KeyStore.getInstance("BKS", "BC")
+//    bks.load(null, null)
+//
+//    ks.setCertificateEntry(certEntryName, cert)
+//    ks.setKeyEntry(rsaEntryName, keyPair.getPrivate, password, Array(cert))
+//
+//    val ecdsaKeys = Seq.fill(numECDSAKeys){makeKeyPairFrom(provider = prov)}
+//
+//    ecdsaKeys.zipWithIndex.foreach{
+//      case (k, i) =>
+//        bks.setCertificateEntry(certEntryName, cert)
+//        bks.setKeyEntry(rsaEntryName, keyPair.getPrivate, password, Array(cert))
+//        bks.setKeyEntry(s"${ecdsaEntryNamePrefix}_priv_" + i, k.getPrivate, password, Array(cert))
+//        bks.setKeyEntry(s"${ecdsaEntryNamePrefix}_pub_" + i, k.getPublic, password, Array(cert))
+//    }
+//    savePairsTo.foreach { file =>
+//      bks.store(new FileOutputStream(file), password)
+//    }
+//
+//    saveCertTo.foreach { file =>
+//      ks.store(new FileOutputStream(file), password)
+//    }
+//
+//    ks -> bks
+//  }
+//
+//}
 
-  def makeWalletKeyStore(
-                          validityInDays: Int = 500000,
-                          orgName: String = "test",
-                          orgUnitName: String = "test",
-                          localityName: String = "test",
-                          password: Array[Char],
-                          numECDSAKeys: Int = 1000,
-                          certEntryName: String = "test_cert",
-                          rsaEntryName: String = "test_rsa",
-                          ecdsaEntryNamePrefix: String = "ecdsa",
-                          saveCertTo: Option[File] = None,
-                          savePairsTo: Option[File] = None,
-                          sslKeySize: Int = 4096
-                        ): (KeyStore, KeyStore) = {
-    import java.security.Security
-    // Note this requires JDK 8u151 +
-    // https://stackoverflow.com/questions/6481627/java-security-illegal-key-size-or-default-parameters
-    Security.setProperty("crypto.policy", "unlimited")
-    // java.lang.SecurityException: JCE cannot authenticate the provider SC
-    // Use BC for now, for some reason SC not working. Just google it theres a fix.
-    val bcProvider = new org.bouncycastle.jce.provider.BouncyCastleProvider()
 
-    val prov = bcProvider // makeProvider
-    Security.insertProviderAt(prov, 1)
-    val keyGen: KeyPairGenerator = KeyPairGenerator.getInstance("RSA", prov)
-    keyGen.initialize(sslKeySize)
-    val keyPair = keyGen.generateKeyPair
-    val startDate = new Date(System.currentTimeMillis() - 24 * 60 * 60 * 1000)
-    val endDate = new Date(System.currentTimeMillis() + validityInDays * 24 * 60 * 60 * 1000)
-
-    val nameBuilder = new X500NameBuilder(BCStyle.INSTANCE)
-    nameBuilder.addRDN(BCStyle.O,orgName)
-    nameBuilder.addRDN(BCStyle.OU,orgUnitName)
-    nameBuilder.addRDN(BCStyle.L,localityName)
-
-    val x500Name = nameBuilder.build()
-    val random = new SecureRandom()
-
-    val subjectPublicKeyInfo = SubjectPublicKeyInfo.getInstance(keyPair.getPublic.getEncoded)
-    val v1CertGen = new X509v1CertificateBuilder(
-      x500Name, BigInteger.valueOf(random.nextLong()),startDate,endDate,x500Name,subjectPublicKeyInfo
-    )
-
-    val sigGen = new JcaContentSignerBuilder("SHA256WithRSAEncryption")
-      .setProvider(prov).build(keyPair.getPrivate)
-
-    val x509CertificateHolder = v1CertGen.build(sigGen)
-
-    val certf = CertificateFactory.getInstance("X.509")
-    val cert = certf.generateCertificate(new ByteArrayInputStream(x509CertificateHolder.getEncoded))
-
-    // There's another solution here: https://stackoverflow.com/questions/13894699/java-how-to-store-a-key-in-keystore
-    // Maybe worth looking at we'll see. This works for now.
-    // Theres a lot of different keystores we actually need to support.
-    // PKCS12 for the SSL certs (between nodes unless they get a proper cert from lets encrypt) is easy
-    // BKS is also easy
-    // There's a lot more and more details to get into. This is pretty complicated but this can serve
-    // As an initial example to at least get the right classes in place.
-    val ks: KeyStore = KeyStore.getInstance("PKCS12", bcProvider)
-    ks.load(null, password)
-    // https://stackoverflow.com/questions/6656263/why-do-i-get-the-error-cannot-store-non-privatekeys-when-creating-an-ssl-socke
-    // ^ in case next step is confusing:
-
-    import java.io.FileOutputStream
-    import java.security.KeyStore
-    val bks = KeyStore.getInstance("BKS", "BC")
-    bks.load(null, null)
-
-    ks.setCertificateEntry(certEntryName, cert)
-    ks.setKeyEntry(rsaEntryName, keyPair.getPrivate, password, Array(cert))
-
-    val ecdsaKeys = Seq.fill(numECDSAKeys){makeKeyPairFrom(provider = prov)}
-
-    ecdsaKeys.zipWithIndex.foreach{
-      case (k, i) =>
-        bks.setCertificateEntry(certEntryName, cert)
-        bks.setKeyEntry(rsaEntryName, keyPair.getPrivate, password, Array(cert))
-        bks.setKeyEntry(s"${ecdsaEntryNamePrefix}_priv_" + i, k.getPrivate, password, Array(cert))
-        bks.setKeyEntry(s"${ecdsaEntryNamePrefix}_pub_" + i, k.getPublic, password, Array(cert))
-    }
-    savePairsTo.foreach { file =>
-      bks.store(new FileOutputStream(file), password)
-    }
-
-    saveCertTo.foreach { file =>
-      ks.store(new FileOutputStream(file), password)
-    }
-
-    ks -> bks
-  }
-
-}
-
- */
