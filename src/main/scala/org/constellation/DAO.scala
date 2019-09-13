@@ -101,15 +101,6 @@ class DAO() extends NodeData with EdgeDAO with SimpleWalletLike with StrictLoggi
     transactionService = new TransactionService[IO](this)
     transactionGossiping = new TransactionGossiping[IO](transactionService, processingConfig.txGossipingFanout, this)
 
-    concurrentTipService = new ConcurrentTipService[IO](
-      processingConfig.maxActiveTipsAllowedInMemory,
-      processingConfig.maxWidth,
-      processingConfig.maxTipUsage,
-      processingConfig.numFacilitatorPeers,
-      processingConfig.minPeerTimeAddedSeconds,
-      this
-    )
-
     observationService = new ObservationService[IO](this)
     checkpointService = new CheckpointService[IO](
       this,
@@ -143,26 +134,26 @@ class DAO() extends NodeData with EdgeDAO with SimpleWalletLike with StrictLoggi
 
     consensusWatcher = new ConsensusWatcher(ConfigUtil.config, consensusManager)
 
-    snapshotBroadcastService = {
-      val snapshotProcessor =
-        new SnapshotsProcessor(SnapshotsDownloader.downloadSnapshotByDistance)(
-          this,
-          ConstellationExecutionContext.bounded
-        )
-      val downloadProcess = new DownloadProcess(snapshotProcessor)(this, ConstellationExecutionContext.bounded)
-      new SnapshotBroadcastService[IO](
-        new HealthChecker[IO](
-          this,
-          concurrentTipService,
-          consensusManager,
-          IO.contextShift(ConstellationExecutionContext.bounded),
-          downloadProcess
-        ),
-        cluster,
-        IO.contextShift(ConstellationExecutionContext.bounded),
-        this
+    val snapshotProcessor =
+      new SnapshotsProcessor(SnapshotsDownloader.downloadSnapshotByDistance)(
+        this,
+        ConstellationExecutionContext.bounded
       )
-    }
+    val downloadProcess = new DownloadProcess(snapshotProcessor)(this, ConstellationExecutionContext.bounded)
+    healthChecker = new HealthChecker[IO](
+      this,
+      concurrentTipService,
+      consensusManager,
+      IO.contextShift(ConstellationExecutionContext.bounded),
+      downloadProcess
+    )
+
+    snapshotBroadcastService = new SnapshotBroadcastService[IO](
+      healthChecker,
+      cluster,
+      IO.contextShift(ConstellationExecutionContext.bounded),
+      this
+    )
     snapshotWatcher = new SnapshotWatcher(snapshotBroadcastService)
 
     snapshotService = SnapshotService[IO](
@@ -175,6 +166,16 @@ class DAO() extends NodeData with EdgeDAO with SimpleWalletLike with StrictLoggi
       snapshotBroadcastService,
       consensusManager,
       this
+    )
+
+    concurrentTipService = new ConcurrentTipService[IO](
+      processingConfig.maxActiveTipsAllowedInMemory,
+      processingConfig.maxWidth,
+      processingConfig.maxTipUsage,
+      processingConfig.numFacilitatorPeers,
+      processingConfig.minPeerTimeAddedSeconds,
+      this,
+      healthChecker
     )
 
     transactionGenerator =

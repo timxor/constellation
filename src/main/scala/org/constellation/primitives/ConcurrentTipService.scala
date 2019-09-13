@@ -11,7 +11,7 @@ import org.constellation.consensus.TipData
 import org.constellation.p2p.PeerData
 import org.constellation.primitives.Schema.{Height, Id, SignedObservationEdge}
 import org.constellation.primitives.concurrency.{SingleLock, SingleRef}
-import org.constellation.util.Metrics
+import org.constellation.util.{HealthChecker, Metrics}
 import org.constellation.{ConstellationExecutionContext, DAO}
 import org.constellation.util.Logging._
 
@@ -34,7 +34,8 @@ class ConcurrentTipService[F[_]: Concurrent: Logger: Clock](
   maxTipUsage: Int,
   numFacilitatorPeers: Int,
   minPeerTimeAddedSeconds: Int,
-  dao: DAO
+  dao: DAO,
+  healthChecker: HealthChecker[F]
 ) {
 
   def clearStaleTips(min: Long): F[Unit] =
@@ -173,19 +174,31 @@ class ConcurrentTipService[F[_]: Concurrent: Logger: Clock](
       "concurrentTipService_getMinTipHeight"
     )
 
-  def pull(readyFacilitators: Map[Id, PeerData])(implicit metrics: Metrics): F[Option[PulledTips]] =
+  def pull(readyFacilitators: Map[Id, PeerData], nextSnapshotHeight: Long)(
+    implicit metrics: Metrics
+  ): F[Option[PulledTips]] =
     logThread(
-      tipsRef.get.map { tips =>
-        metrics.updateMetric("activeTips", tips.size)
-        (tips.size, readyFacilitators) match {
-          case (size, facilitators) if size >= numFacilitatorPeers && facilitators.nonEmpty =>
-            val tipSOE = calculateTipsSOE(tips)
-            Some(PulledTips(tipSOE, calculateFinalFacilitators(facilitators, tipSOE.soe.map(_.hash).reduce(_ + _))))
-          case (size, _) if size >= numFacilitatorPeers =>
-            Some(PulledTips(calculateTipsSOE(tips), Map.empty[Id, PeerData]))
-          case (_, _) => None
+      for {
+        heights <- healthChecker.latestPeerSnapshot.get.map(_.mapValues(_.height + 2))
+        res <- tipsRef.get.map {
+          tips =>
+            metrics.updateMetric("activeTips", tips.size)
+            (tips.size, readyFacilitators) match {
+              case (size, facilitators) if size >= numFacilitatorPeers && facilitators.nonEmpty =>
+                val tipSOE = calculateTipsSOE(tips)
+                val availableFacilitators = facilitators.filter(x => heights.getOrElse(x._1, 0L) <= nextSnapshotHeight)
+                Some(
+                  PulledTips(
+                    tipSOE,
+                    calculateFinalFacilitators(availableFacilitators, tipSOE.soe.map(_.hash).reduce(_ + _))
+                  )
+                )
+              case (size, _) if size >= numFacilitatorPeers =>
+                Some(PulledTips(calculateTipsSOE(tips), Map.empty[Id, PeerData]))
+              case (_, _) => None
+            }
         }
-      },
+      } yield res,
       "concurrentTipService_pull"
     )
 

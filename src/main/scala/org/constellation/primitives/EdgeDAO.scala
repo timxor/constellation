@@ -11,7 +11,7 @@ import org.constellation.rollback.RollbackService
 import org.constellation.storage._
 import org.constellation.storage.external.CloudStorage
 import org.constellation.storage.transactions.TransactionGossiping
-import org.constellation.util.{Metrics, SnapshotWatcher}
+import org.constellation.util.{HealthChecker, Metrics, SnapshotWatcher}
 import org.constellation.{ConstellationExecutionContext, DAO, NodeConfig, ProcessingConfig}
 
 import scala.collection.concurrent.TrieMap
@@ -123,6 +123,7 @@ trait EdgeDAO {
   var consensusRemoteSender: ConsensusRemoteSender[IO] = _
   var consensusManager: ConsensusManager[IO] = _
   var consensusWatcher: ConsensusWatcher = _
+  var healthChecker: HealthChecker[IO] = _
   var consensusScheduler: ConsensusScheduler = _
   val notificationService = new NotificationService[IO]()
   val messageService: MessageService[IO]

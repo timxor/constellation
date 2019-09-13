@@ -108,7 +108,7 @@ object EdgeProcessor extends StrictLogging {
     if (readyFacilitators.isEmpty) {
       dao.metrics.incrementMetric("attemptFormCheckpointInsufficientTipsOrFacilitators")
       if (dao.nodeConfig.isGenesisNode) {
-        val maybeTips = dao.concurrentTipService.pull(Map.empty)(dao.metrics).unsafeRunSync()
+        val maybeTips = dao.concurrentTipService.pull(Map.empty, 2)(dao.metrics).unsafeRunSync()
         if (maybeTips.isEmpty) {
           dao.metrics.incrementMetric("attemptFormCheckpointNoGenesisTips")
         }
@@ -132,60 +132,63 @@ object EdgeProcessor extends StrictLogging {
 
     }
 
-    val result = dao.concurrentTipService.pull(readyFacilitators)(dao.metrics).unsafeRunSync().map { pulledTip =>
-      // Change to method on TipsReturned // abstract for reuse.
-      val checkpointBlock = CheckpointBlock.createCheckpointBlock(transactions, pulledTip.tipSoe.soe.map { soe =>
-        TypedEdgeHash(soe.hash, EdgeHashType.CheckpointHash)
-      }, messages)(dao.keyPair)
-      dao.metrics.incrementMetric("checkpointBlocksCreated")
+    val result = dao.snapshotService.getNextHeightInterval
+      .flatMap(dao.concurrentTipService.pull(readyFacilitators, _)(dao.metrics))
+      .unsafeRunSync()
+      .map { pulledTip =>
+        // Change to method on TipsReturned // abstract for reuse.
+        val checkpointBlock = CheckpointBlock.createCheckpointBlock(transactions, pulledTip.tipSoe.soe.map { soe =>
+          TypedEdgeHash(soe.hash, EdgeHashType.CheckpointHash)
+        }, messages)(dao.keyPair)
+        dao.metrics.incrementMetric("checkpointBlocksCreated")
 
-      val finalFacilitators = pulledTip.peers.keySet
+        val finalFacilitators = pulledTip.peers.keySet
 
-      val signatureResults = pulledTip.peers.values.toList.traverse { peerData =>
-        requestBlockSignature(checkpointBlock, finalFacilitators, peerData).toValidatedNel
-      }.flatMap { signatureResultList =>
-        signatureResultList.sequence.map { signatures =>
-          // Unsafe flatten -- revisit during consensus updates
-          signatures.flatten.foldLeft(checkpointBlock) {
-            case (cb, hs) =>
-              cb.plus(hs)
-          }
-        }.ensure(NonEmptyList.one(new Throwable("Invalid CheckpointBlock")))(
-            _.simpleValidation()
-          )
-          .traverse { finalCB =>
-            val cache = CheckpointCache(finalCB.some, height = finalCB.calculateHeight())
-            dao.checkpointService.accept(cache).unsafeRunSync()
-            processSignedBlock(
-              cache,
-              finalFacilitators
+        val signatureResults = pulledTip.peers.values.toList.traverse { peerData =>
+          requestBlockSignature(checkpointBlock, finalFacilitators, peerData).toValidatedNel
+        }.flatMap { signatureResultList =>
+          signatureResultList.sequence.map { signatures =>
+            // Unsafe flatten -- revisit during consensus updates
+            signatures.flatten.foldLeft(checkpointBlock) {
+              case (cb, hs) =>
+                cb.plus(hs)
+            }
+          }.ensure(NonEmptyList.one(new Throwable("Invalid CheckpointBlock")))(
+              _.simpleValidation()
             )
-          }
+            .traverse { finalCB =>
+              val cache = CheckpointCache(finalCB.some, height = finalCB.calculateHeight())
+              dao.checkpointService.accept(cache).unsafeRunSync()
+              processSignedBlock(
+                cache,
+                finalFacilitators
+              )
+            }
+        }
+
+        wrapFutureWithMetric(signatureResults, "checkpointBlockFormation")
+
+        signatureResults.foreach {
+          case Valid(_) =>
+          case Invalid(failures) =>
+            failures.toList.foreach { e =>
+              dao.metrics.incrementMetric(
+                "formCheckpointSignatureResponseError"
+              )
+              logger.warn("Failure gathering signature", e)
+            }
+
+        }
+
+        // using transform kind of like a finally for Future.
+        // I want to ensure the locks get cleaned up
+        signatureResults.transform { res =>
+          // Cleanup locks
+
+          dao.threadSafeMessageMemPool.release(messages)
+          res.map(_ => true)
+        }
       }
-
-      wrapFutureWithMetric(signatureResults, "checkpointBlockFormation")
-
-      signatureResults.foreach {
-        case Valid(_) =>
-        case Invalid(failures) =>
-          failures.toList.foreach { e =>
-            dao.metrics.incrementMetric(
-              "formCheckpointSignatureResponseError"
-            )
-            logger.warn("Failure gathering signature", e)
-          }
-
-      }
-
-      // using transform kind of like a finally for Future.
-      // I want to ensure the locks get cleaned up
-      signatureResults.transform { res =>
-        // Cleanup locks
-
-        dao.threadSafeMessageMemPool.release(messages)
-        res.map(_ => true)
-      }
-    }
     result.sequence
   }
 

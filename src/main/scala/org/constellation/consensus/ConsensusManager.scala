@@ -152,7 +152,8 @@ class ConsensusManager[F[_]: Concurrent](
       transactions <- transactionService
         .pullForConsensus(dao.processingConfig.maxCheckpointFormationThreshold)
       facilitators <- LiftIO[F].liftIO(dao.readyFacilitatorsAsync)
-      tips <- concurrentTipService.pull(facilitators)(dao.metrics)
+      nextSnapshotHeight <- LiftIO[F].liftIO(dao.snapshotService.getNextHeightInterval)
+      tips <- concurrentTipService.pull(facilitators, nextSnapshotHeight)(dao.metrics)
       _ <- if (tips.isEmpty)
         Sync[F].raiseError[Unit](NoTipsForConsensus(roundId, transactions.map(_.transaction.hash), List.empty[String]))
       else Sync[F].unit

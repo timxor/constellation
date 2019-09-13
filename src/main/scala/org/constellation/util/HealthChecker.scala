@@ -8,6 +8,7 @@ import org.constellation.consensus.{ConsensusManager, Snapshot}
 import org.constellation.p2p.{DownloadProcess, PeerData}
 import org.constellation.primitives.ConcurrentTipService
 import org.constellation.primitives.Schema.{Id, NodeState, NodeType}
+import org.constellation.primitives.concurrency.SingleRef
 import org.constellation.storage._
 import org.constellation.util.HealthChecker.{compareSnapshotState, maxOrZero}
 import org.constellation.{ConstellationExecutionContext, DAO}
@@ -176,11 +177,19 @@ class HealthChecker[F[_]: Concurrent: Logger](
   downloader: DownloadProcess
 ) extends StrictLogging {
 
+  val latestPeerSnapshot: SingleRef[F, Map[Id, RecentSnapshot]] = SingleRef(Map.empty)
+
+  private def setLatestPeerSnapshots(xs: List[(Id, List[RecentSnapshot])]): F[Unit] =
+    latestPeerSnapshot.modify(
+      _ => (xs.toMap.mapValues(_.sortBy(_.height).headOption).filter(_._2.isDefined).mapValues(_.get), ())
+    )
+
   def checkClusterConsistency(ownSnapshots: List[RecentSnapshot]): F[Option[List[RecentSnapshot]]] = {
     val check = for {
       _ <- Logger[F].debug(s"[${dao.id.short}] re-download checking cluster consistency")
       peers <- LiftIO[F].liftIO(dao.readyPeers(NodeType.Full))
       peersSnapshots <- collectSnapshot(peers)
+      _ <- setLatestPeerSnapshots(peersSnapshots)
       _ <- clearStaleTips(peersSnapshots)
       diff = compareSnapshotState((dao.id, ownSnapshots), peersSnapshots)
       _ <- Logger[F].debug(s"[${dao.id.short}] re-download cluster diff $diff and own $ownSnapshots")
