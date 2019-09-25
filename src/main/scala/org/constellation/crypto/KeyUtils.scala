@@ -11,11 +11,11 @@ import better.files.File
 import com.google.common.hash.Hashing
 import com.typesafe.scalalogging.StrictLogging
 import org.bouncycastle.jce.provider
+import org.bouncycastle.jce.provider.BouncyCastleProvider
 import org.spongycastle.asn1.x500.{X500Name, X500NameBuilder}
 import org.spongycastle.asn1.x500.style.BCStyle
 import org.spongycastle.asn1.x509.SubjectPublicKeyInfo
 import org.spongycastle.cert.X509v1CertificateBuilder
-import org.spongycastle.jce.provider.BouncyCastleProvider
 import org.spongycastle.operator.jcajce.JcaContentSignerBuilder
 
 /**
@@ -41,7 +41,8 @@ object KeyUtils extends StrictLogging {
 
   def insertProvider(): BouncyCastleProvider = {
     import java.security.Security
-    val provider = new org.spongycastle.jce.provider.BouncyCastleProvider()
+
+    val provider = new BouncyCastleProvider
     val ret = Security.insertProviderAt(provider, 1)
     logger.debug(s"Insert provider return $ret")
     provider
@@ -263,29 +264,53 @@ object WalletKeyStore extends App {
     keyGen.generateKeyPair
   }
 
-  def testGetKeys = {
-    val file = better.files.File("keystoretest.p12").toJava
-    val file2 = better.files.File("keystoretest.bks").toJava
-    val pass = "fakepassword".toCharArray
-    val (p12A, bksA) = WalletKeyStore.makeWalletKeyStore(
-      saveCertTo = Some(file),
-      savePairsTo = Some(file2),
-      password = pass,
-      numECDSAKeys = 10
-    )
+  def loadSecureKeys(password: String = "fakepassword") = {
+
+    val dagDir = System.getProperty("user.home") +"/.dag"//todo dry by putting into own into files
+    val keyDir = dagDir + "/encrypted_key"
+    val p12File = better.files.File(keyDir + "keystoretest.p12").toJava
+    val bksFile = better.files.File(keyDir + "keystoretest.bks").toJava
 
     val p12 = KeyStore.getInstance("PKCS12", "BC")
-    p12.load(new java.io.FileInputStream(file), pass)
+    p12.load(new java.io.FileInputStream(p12File), password.toCharArray)
 
     val bks: KeyStore = KeyStore.getInstance("BKS", "BC")
-    bks.load(new FileInputStream(file2), pass)
+    bks.load(new FileInputStream(bksFile), password.toCharArray)
+
+    val privKey: PrivateKey = bks.getKey("test_rsa", password.toCharArray).asInstanceOf[PrivateKey]
+    val pubKey: PublicKey = p12.getCertificate("test_cert").getPublicKey
+    (privKey, pubKey)
+  }
+
+  def testGetKeys(password: String = "fakepassword") = {
+    import java.security.Security
+    Security.addProvider(new BouncyCastleProvider)
+    val dagDir = System.getProperty("user.home") +"/.dag"//todo dry by putting into own into files
+    val keyDir = dagDir + "/encrypted_key"
+    val p12File = better.files.File(keyDir + "/keystoretest.p12").toJava
+    val bksFile = better.files.File(keyDir + "/keystoretest.bks").toJava
+    val pass = password.toCharArray
+//    val (p12A, bksA) = WalletKeyStore.makeWalletKeyStore(
+//      saveCertTo = Some(p12File),
+//      savePairsTo = Some(bksFile),
+//      password = pass,
+//      numECDSAKeys = 10
+//    )
+
+    println("testGetKeys" + "\n")
+
+    val p12 = KeyStore.getInstance("PKCS12", "BC")
+    p12.load(new java.io.FileInputStream(p12File), pass)
+
+    val bks: KeyStore = KeyStore.getInstance("BKS", "BC")
+    bks.load(new FileInputStream(bksFile), pass)
 
     val protParam = new KeyStore.PasswordProtection(pass)
 
 //    assert(p12A.getCertificate("test_cert") == p12.getCertificate("test_cert"))
     val privKey: Key = bks.getKey("test_rsa", pass)
 //    assert(privKey.isInstanceOf[PrivateKey])
-    val publicKey: PublicKey = p12A.getCertificate("test_cert").getPublicKey
+    val publicKey: PublicKey = p12.getCertificate("test_cert").getPublicKey
 //    assert(publicKey.isInstanceOf[PublicKey])
     (privKey.asInstanceOf[PrivateKey], publicKey)
   }
@@ -333,7 +358,7 @@ object WalletKeyStore extends App {
     //(X500Name issuer, BigInteger serial, Date notBefore, Date notAfter, X500Name subject, SubjectPublicKeyInfo publicKeyInfo)
 
     val sigGen = new JcaContentSignerBuilder("SHA512withECDSA")
-      .setProvider(prov).build(keyPair.getPrivate)
+      .setProvider(getProv).build(keyPair.getPrivate)//todo test prov -> insertProvider in .setProvider
 
     val x509CertificateHolder = v1CertGen.build(sigGen)
 
