@@ -5,8 +5,10 @@ import constellation.{createTransaction, _}
 import org.constellation.crypto.KeyUtils._
 import org.constellation.primitives._
 import java.nio.file.Paths
+import java.security.KeyPair
 
 import constellation._
+import org.constellation.crypto.WalletKeyStore
 
 
 object GetOrCreateKeys extends App {
@@ -23,7 +25,8 @@ object SignNewTx extends App {
   val dagDir = System.getProperty("user.home") +"/.dag"
   val acctDir = dagDir + "/acct"
   val keyDir = dagDir + "/key"
-  val keyInfo = GetOrCreateKeys
+  val (privKey, pubKey)  = WalletKeyStore.testGetKeys
+  val keyInfo = new KeyPair(pubKey, privKey)//GetOrCreateKeys
   val newTxData = args match {
     case Array(ammt, dst, fee) => TxData(ammt.toLong, dst, fee.toLong)
     case Array() => TxData(420, "ijTest", 1L)
@@ -35,17 +38,19 @@ object SignNewTx extends App {
     val loadedTx = acctFile.lines.head.x[Transaction]
     (loadedTx.signature, loadedTx.count)
   }
-  val src = publicKeyToHex(keyInfo.keyPair.getPublic)
-  val signature = signData(prevTxHash)(keyInfo.keyPair.getPrivate)
+  val src = publicKeyToHex(pubKey)//keyInfo.keyPair.getPublic)
+  val signature: Array[Byte] = signData(prevTxHash)(privKey)//keyInfo.keyPair.getPrivate)
+  println(signature.toString)
   val newTx = createTransaction(
     src,
     newTxData.dst,
     newTxData.ammt,
-    keyInfo.keyPair,
+    keyInfo,
     prevTxCount + 1,
     true,
     false,
     newTxData.fee,
     signature)
+
   newTx.jsonAppend(acctDir)
 }

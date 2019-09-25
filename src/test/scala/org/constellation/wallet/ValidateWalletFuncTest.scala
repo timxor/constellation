@@ -1,11 +1,14 @@
 package org.constellation.wallet
 
-import java.security.{KeyPair, PrivateKey, PublicKey}
+import java.io.FileInputStream
+import java.security.{KeyPair, KeyStore, PrivateKey, PublicKey}
+
+import better.files.File
 import org.json4s.native.Serialization
 import org.scalatest.FlatSpec
-
 import constellation._
 import org.constellation.crypto.KeyUtils._
+import org.constellation.crypto.WalletKeyStore
 
 case class SetSerialize(s: Set[String])
 
@@ -21,12 +24,12 @@ class ValidateWalletFuncTest extends FlatSpec {
 
   }
 
-  /*  "Wallet KeyStore" should "build a keystore properly" in {
+    "Wallet KeyStore" should "build a keystore properly" in {
 
-    val file = new File("keystoretest.p12")
-    val file2 = new File("keystoretest.bks")
+    val file = better.files.File("keystoretest.p12").toJava
+    val file2 = better.files.File("keystoretest.bks").toJava
     val pass = "fakepassword".toCharArray
-    val (p12A, bksA) = makeWalletKeyStore(
+    val (p12A, bksA) = WalletKeyStore.makeWalletKeyStore(
       saveCertTo = Some(file),
       savePairsTo = Some(file2),
       password = pass,
@@ -34,19 +37,25 @@ class ValidateWalletFuncTest extends FlatSpec {
     )
 
     val p12 = KeyStore.getInstance("PKCS12", "BC")
-    p12.load(new FileInputStream(file), pass)
+    p12.load(new java.io.FileInputStream(file), pass)
 
-    val bks = KeyStore.getInstance("BKS", "BC")
+    val bks: KeyStore = KeyStore.getInstance("BKS", "BC")
     bks.load(new FileInputStream(file2), pass)
 
+    val protParam = new KeyStore.PasswordProtection(pass)
+
     assert(p12A.getCertificate("test_cert") == p12.getCertificate("test_cert"))
+    val test = bks.getKey("test_rsa", pass)
+    assert(test.isInstanceOf[PrivateKey])
+    val publicKey = p12A.getCertificate("test_cert").getPublicKey
+    assert(publicKey.isInstanceOf[PublicKey])
 
     file.delete()
     file2.delete()
 
     // Put more tests in here.
 
-  }*/
+  }
 
   "KeyGen" should "make proper keys" in {
     val privK = kp.getPrivate.toString
