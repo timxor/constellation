@@ -37,7 +37,7 @@ object SignNewTx extends App {
 
   val (privKey, pubKey)  = WalletKeyStore.testGetKeys()//testGetKeys()
   val newTxData = args match {
-    case Array(ammt, dst, fee, pass) => TxData(ammt.toLong, dst, fee.toLong)
+    case Array(ammt, dst, fee, pass) => TxData(ammt.toLong, dst, fee.toLong, pass)
     case Array() => TxData(420, "local_test", 1L, "fakepassword")
   }
 

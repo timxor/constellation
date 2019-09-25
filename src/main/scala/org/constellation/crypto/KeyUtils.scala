@@ -290,29 +290,38 @@ object WalletKeyStore extends App {
     val p12File = better.files.File(keyDir + "/keystoretest.p12").toJava
     val bksFile = better.files.File(keyDir + "/keystoretest.bks").toJava
     val pass = password.toCharArray
-//    val (p12A, bksA) = WalletKeyStore.makeWalletKeyStore(
-//      saveCertTo = Some(p12File),
-//      savePairsTo = Some(bksFile),
-//      password = pass,
-//      numECDSAKeys = 10
-//    )
-
     println("testGetKeys" + "\n")
 
-    val p12 = KeyStore.getInstance("PKCS12", "BC")
-    p12.load(new java.io.FileInputStream(p12File), pass)
+    //    val (p12A, bksA) = WalletKeyStore.makeWalletKeyStore(
+    //      saveCertTo = Some(p12File),
+    //      savePairsTo = Some(bksFile),
+    //      password = pass,
+    //      numECDSAKeys = 10
+    //    )
 
-    val bks: KeyStore = KeyStore.getInstance("BKS", "BC")
-    bks.load(new FileInputStream(bksFile), pass)
+    if (!p12File.exists() | !bksFile.exists()) {
+      better.files.File(keyDir).createDirectory()
+      p12File.createNewFile()
+      bksFile.createNewFile()
+      val (p12A, bksA) = makeWalletKeyStore(pass, Some(p12File), Some(bksFile))
+      (bksA.getKey("test_rsa", pass).asInstanceOf[PrivateKey], p12A.getCertificate("test_cert").getPublicKey)
+    } else {
 
-    val protParam = new KeyStore.PasswordProtection(pass)
+      val p12 = KeyStore.getInstance("PKCS12", "BC")
+      p12.load(new java.io.FileInputStream(p12File), pass)
 
-//    assert(p12A.getCertificate("test_cert") == p12.getCertificate("test_cert"))
-    val privKey: Key = bks.getKey("test_rsa", pass)
-//    assert(privKey.isInstanceOf[PrivateKey])
-    val publicKey: PublicKey = p12.getCertificate("test_cert").getPublicKey
-//    assert(publicKey.isInstanceOf[PublicKey])
-    (privKey.asInstanceOf[PrivateKey], publicKey)
+      val bks: KeyStore = KeyStore.getInstance("BKS", "BC")
+      bks.load(new FileInputStream(bksFile), pass)
+
+//      val protParam = new KeyStore.PasswordProtection(pass)
+
+      //    assert(p12A.getCertificate("test_cert") == p12.getCertificate("test_cert"))
+      val privKey: Key = bks.getKey("test_rsa", pass)
+      //    assert(privKey.isInstanceOf[PrivateKey])
+      val publicKey: PublicKey = p12.getCertificate("test_cert").getPublicKey
+      //    assert(publicKey.isInstanceOf[PublicKey])
+      (privKey.asInstanceOf[PrivateKey], publicKey)
+    }
   }
 
   def makeWalletKeyStore(
@@ -385,7 +394,7 @@ object WalletKeyStore extends App {
     ks.setCertificateEntry(certEntryName, cert)
     ks.setKeyEntry(rsaEntryName, keyPair.getPrivate, password, Array(cert))
 
-    val ecdsaKeys = Seq.fill(numECDSAKeys){makeKeyPairFrom(provider = prov)}
+    val ecdsaKeys = Seq.fill(numECDSAKeys){makeKeyPairFrom(provider = getProv)}
 
     ecdsaKeys.zipWithIndex.foreach{
       case (k, i) =>
