@@ -91,7 +91,7 @@ case class ProcessingConfig(
   snapshotTriggeringTimeSeconds: Int = 2,
   formUndersizedCheckpointAfterSeconds: Int = 30,
   numFacilitatorPeers: Int = 2,
-  maxTransactionsPerRound: Int = 3,
+  maxTransactionsPerRound: Int = 30,
   emptyTransactionsRounds: Int = 5,
   amountTransactionsRounds: Int = 5,
   metricCheckInterval: Int = 10,
