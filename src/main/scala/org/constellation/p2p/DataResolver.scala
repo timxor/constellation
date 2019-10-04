@@ -248,9 +248,13 @@ class DataResolver extends StrictLogging {
   )(
     contextToReturn: ContextShift[IO]
   )(implicit apiTimeout: Duration = 3.seconds, m: Manifest[T], dao: DAO): IO[List[T]] =
-    resolveBatchData[T](hashes, endpoint, priorityClient.toList ++ pool.sortBy { p =>
-      Distance.calculate(hashes.head, p.id)
-    })(contextToReturn)
+    hashes match {
+      case Nil => List.empty.pure[IO]
+      case _ =>
+        resolveBatchData[T](hashes, endpoint, priorityClient.toList ++ pool.sortBy { p =>
+          Distance.calculate(hashes.head, p.id)
+        })(contextToReturn)
+    }
 
   private[p2p] def resolveData[T <: AnyRef](
     hash: String,
