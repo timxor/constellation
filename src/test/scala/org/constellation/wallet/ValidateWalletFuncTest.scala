@@ -1,30 +1,18 @@
 package org.constellation.wallet
 
-
-import java.io.{File, FileInputStream}
-import java.security.{KeyPair, KeyStore, PrivateKey, PublicKey}
-
+import java.security.{KeyPair, PrivateKey, PublicKey}
 import org.scalatest.FlatSpec
-import org.constellation.crypto.KeyUtils._
-import org.json4s.{DefaultFormats, Formats, NoTypeHints}
-import org.json4s.native.Serialization
-import java.security.KeyStore
+
+import constellation._
+import org.constellation.keytool.KeyUtils._
 
 case class SetSerialize(s: Set[String])
 
-class ValidateWalletFuncTest  extends FlatSpec {
+class ValidateWalletFuncTest extends FlatSpec {
 
   val kp: KeyPair = makeKeyPair()
 
-  "Set serialize" should "test" in {
-
-    import constellation._
-    val s = SetSerialize(Set("a", "b", "c"))
-    assert(s.json.x[SetSerialize] == s)
-
-  }
-
-  "Wallet KeyStore" should "build a keystore properly" in {
+  /*  "Wallet KeyStore" should "build a keystore properly" in {
 
     val file = new File("keystoretest.p12")
     val file2 = new File("keystoretest.bks")
@@ -49,7 +37,7 @@ class ValidateWalletFuncTest  extends FlatSpec {
 
     // Put more tests in here.
 
-  }
+  }*/
 
   "KeyGen" should "make proper keys" in {
     val privK = kp.getPrivate.toString
@@ -60,28 +48,6 @@ class ValidateWalletFuncTest  extends FlatSpec {
       assert(pk.contains("X:"))
       assert(pk.split("\n").length > 2)
     }
-  }
-
-  "KeyPair JSON" should "serialize to json4s using custom serializer" in {
-    implicit val formats: Formats = DefaultFormats +
-      new PublicKeySerializer + new PrivateKeySerializer + new KeyPairSerializer
-    val ser = Serialization.write(kp.getPublic)
-    val deser = Serialization.read[PublicKey](ser)
-    assert(deser == kp.getPublic)
-    val ser2 = Serialization.write(kp.getPrivate)
-    val deser2 = Serialization.read[PrivateKey](ser2)
-    assert(deser2 == kp.getPrivate)
-    val ser3 = Serialization.write(kp)
-    val deser3 = Serialization.read[KeyPair](ser3)
-    assert(deser3.getPrivate == kp.getPrivate)
-    assert(deser3.getPublic == kp.getPublic)
-
-    assert(kp.getPublic.hashCode() == deser3.getPublic.hashCode())
-    assert(kp.getPrivate.getAlgorithm == deser3.getPrivate.getAlgorithm)
-    assert(kp.getPublic.getAlgorithm == deser3.getPublic.getAlgorithm)
-    assert(kp.getPublic.getFormat == deser3.getPublic.getFormat)
-    assert(kp.getPrivate.getFormat == deser3.getPrivate.getFormat)
-
   }
 
   "Signature" should "sign and verify output" in {
@@ -99,7 +65,7 @@ class ValidateWalletFuncTest  extends FlatSpec {
   "Key Size" should "verify byte array lengths for encoded keys" in {
 
     def fill(thunk: => Array[Byte]) =
-      Seq.fill(50){thunk}.map{_.length}.distinct
+      Seq.fill(50) { thunk }.map { _.length }.distinct
 
     assert(fill(makeKeyPair().getPrivate.getEncoded) == List(144))
     assert(fill(makeKeyPair().getPublic.getEncoded) == List(88))

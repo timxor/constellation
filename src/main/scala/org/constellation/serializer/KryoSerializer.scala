@@ -1,13 +1,13 @@
 package org.constellation.serializer
 
-import java.security.PublicKey
+import java.io.{FileOutputStream, OutputStream}
 
 import akka.util.ByteString
-import com.twitter.chill.{IKryoRegistrar, KryoInstantiator, KryoPool, ScalaKryoInstantiator}
-import org.constellation.consensus.Consensus.RemoteMessage
-import org.constellation.p2p.SerializedUDPMessage
+import com.esotericsoftware.kryo.io.{Input, InputChunked, Output, OutputChunked}
+import com.twitter.chill.{KryoPool, ScalaKryoInstantiator}
 
 import scala.util.Random
+import org.constellation.p2p.SerializedUDPMessage
 
 object KryoSerializer {
 
@@ -17,12 +17,14 @@ object KryoSerializer {
     GUESS_THREADS_PER_CORE * cores
   }
 
-  val kryoPool: KryoPool = KryoPool.withBuffer(guessThreads,
-    new ScalaKryoInstantiator().setRegistrationRequired(true)
+  val kryoPool = KryoPool.withByteArrayOutputStream(
+    10,
+    new ScalaKryoInstantiator()
+      .setRegistrationRequired(true)
       .withRegistrar(new ConstellationKryoRegistrar())
-    , 32, 1024*1024*100)
+  )
 
-  def serializeGrouped[T <: RemoteMessage](data: T, groupSize: Int = 45000): Seq[SerializedUDPMessage] = {
+  def serializeGrouped[T](data: T, groupSize: Int = 45000): Seq[SerializedUDPMessage] = {
 
     val bytes: Array[Byte] = kryoPool.toBytesWithClass(data)
 
@@ -30,9 +32,9 @@ object KryoSerializer {
 
     val pg: Long = Random.nextLong()
 
-    idx.map { case (b: Array[Byte], i: Int) =>
-      SerializedUDPMessage(ByteString(b),
-        packetGroup = pg, packetGroupSize = idx.length, packetGroupId = i)
+    idx.map {
+      case (b: Array[Byte], i: Int) =>
+        SerializedUDPMessage(ByteString(b), packetGroup = pg, packetGroupSize = idx.length, packetGroupId = i)
     }
   }
 
@@ -42,16 +44,35 @@ object KryoSerializer {
     deserialize(sortedBytes)
   }
 
-  def serialize[T <: RemoteMessage](data: T): Array[Byte] = {
+  def serialize[T](data: T): Array[Byte] =
     kryoPool.toBytesWithClass(data)
-  }
 
-  def serializeAnyRef(anyRef: AnyRef): Array[Byte] = {
+  // Use this one
+
+  def serializeAnyRef(anyRef: AnyRef): Array[Byte] =
     kryoPool.toBytesWithClass(anyRef)
-  }
 
-  def deserialize(message: Array[Byte]): AnyRef= {
+  def deserialize(message: Array[Byte]): AnyRef =
     kryoPool.fromBytes(message)
+
+  // Use this one
+
+  def deserializeCast[T](message: Array[Byte]): T =
+    kryoPool.fromBytes(message).asInstanceOf[T]
+  /*
+
+  def deserializeT[T : ClassTag](message: Array[Byte]): AnyRef= {
+
+    val clz = {
+      import scala.reflect._
+
+      classTag[T].runtimeClass.asInstanceOf[Class[T]]
+    }
+    kryoPool.fromBytes(message, clz)
   }
+   */
+
+  def deserialize[T](message: Array[Byte], cls: Class[T]): T =
+    kryoPool.fromBytes(message, cls)
 
 }

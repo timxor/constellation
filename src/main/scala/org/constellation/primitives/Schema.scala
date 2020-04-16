@@ -1,52 +1,126 @@
 package org.constellation.primitives
 
+import java.security.KeyPair
 
-import java.net.InetSocketAddress
-import java.security.PublicKey
-
-import akka.actor.ActorRef
-import cats.kernel.Monoid
-import constellation.pubKeyToAddress
-import org.constellation.LevelDB.DBPut
-import org.constellation.consensus.Consensus.RemoteMessage
-import org.constellation.crypto.Base58
+import enumeratum._
+import org.constellation.domain.transaction.LastTransactionRef
+import org.constellation.schema.Id
 import org.constellation.util._
 
-import scala.collection.{SortedSet, mutable}
-import scala.collection.concurrent.TrieMap
+// This can't be a trait due to serialization issues.
 import scala.util.Random
 
-// This can't be a trait due to serialization issues
 object Schema {
 
   case class TreeVisual(
-                         name: String,
-                         parent: String,
-                         children: Seq[TreeVisual]
-                       )
+    name: String,
+    parent: String,
+    children: Seq[TreeVisual]
+  )
 
   case class TransactionQueryResponse(
-                                       hash: String,
-                                       tx: Option[Transaction],
-                                       observed: Boolean,
-                                       inMemPool: Boolean,
-                                       confirmed: Boolean,
-                                       numGossipChains: Int,
-                                       gossipStackDepths: Seq[Int],
-                                       gossip: Seq[Gossip[ProductHash]]
-                                     )
+    hash: String,
+    transaction: Option[Transaction],
+    inMemPool: Boolean,
+    inDAG: Boolean,
+    cbEdgeHash: Option[String]
+  )
 
-  sealed trait NodeState
-  final case object PendingDownload extends NodeState
-  final case object Ready extends NodeState
+  sealed trait NodeState extends EnumEntry
+
+  object NodeState extends Enum[NodeState] with CirceEnum[NodeState] {
+
+    case object PendingDownload extends NodeState
+    case object ReadyForDownload extends NodeState
+    case object DownloadInProgress extends NodeState
+    case object DownloadCompleteAwaitingFinalSync extends NodeState
+    case object SnapshotCreation extends NodeState
+    case object Ready extends NodeState
+    case object Leaving extends NodeState
+    case object Offline extends NodeState
+
+    val values = findValues
+
+    val all: Set[NodeState] = values.toSet
+
+    val readyStates: Set[NodeState] = Set(NodeState.Ready, NodeState.SnapshotCreation)
+
+    val initial: Set[NodeState] = Set(Offline, PendingDownload)
+
+    val broadcastStates: Set[NodeState] = Set(Ready, Leaving, Offline, PendingDownload, ReadyForDownload)
+
+    val offlineStates: Set[NodeState] = Set(Offline)
+
+    val invalidForJoining: Set[NodeState] = Set(Leaving, Offline)
+
+    val validDuringDownload: Set[NodeState] =
+      Set(ReadyForDownload, DownloadInProgress, DownloadCompleteAwaitingFinalSync)
+
+    val validForDownload: Set[NodeState] = Set(PendingDownload, Ready)
+
+    val validForRedownload: Set[NodeState] = Set(ReadyForDownload, Ready)
+
+    val validForSnapshotCreation: Set[NodeState] = Set(Ready, Leaving)
+
+    val validForTransactionGeneration: Set[NodeState] = Set(Ready, SnapshotCreation)
+
+    val validForOwnConsensus: Set[NodeState] = Set(Ready, SnapshotCreation)
+
+    val validForConsensusParticipation: Set[NodeState] = Set(Ready, SnapshotCreation)
+
+    val validForLettingOthersDownload: Set[NodeState] = Set(Ready, SnapshotCreation, Leaving)
+
+    val validForLettingOthersRedownload: Set[NodeState] = Set(Ready, Leaving)
+
+    val validForCheckpointAcceptance: Set[NodeState] = Set(Ready, SnapshotCreation)
+
+    val validForCheckpointPendingAcceptance: Set[NodeState] = validDuringDownload
+
+    def isNotOffline(current: NodeState): Boolean = !offlineStates.contains(current)
+
+    def isInvalidForJoining(current: NodeState): Boolean = invalidForJoining.contains(current)
+
+    def canActAsJoiningSource(current: NodeState): Boolean = all.diff(invalidForJoining).contains(current)
+
+    def canActAsDownloadSource(current: NodeState): Boolean = validForLettingOthersDownload.contains(current)
+
+    def canActAsRedownloadSource(current: NodeState): Boolean = validForLettingOthersRedownload.contains(current)
+
+    def canRunClusterCheck(current: NodeState): Boolean = validForRedownload.contains(current)
+
+    def canCreateSnapshot(current: NodeState): Boolean = validForSnapshotCreation.contains(current)
+
+    def canGenerateTransactions(current: NodeState): Boolean = validForTransactionGeneration.contains(current)
+
+    def canStartOwnConsensus(current: NodeState): Boolean = validForOwnConsensus.contains(current)
+
+    def canParticipateConsensus(current: NodeState): Boolean = validForConsensusParticipation.contains(current)
+
+    def canAcceptCheckpoint(current: NodeState): Boolean = validForCheckpointAcceptance.contains(current)
+
+    def canAwaitForCheckpointAcceptance(current: NodeState): Boolean =
+      validForCheckpointPendingAcceptance.contains(current)
+
+  }
+
+  sealed trait NodeType extends EnumEntry
+
+  object NodeType extends Enum[NodeType] with CirceEnum[NodeType] {
+    case object Full extends NodeType
+    case object Light extends NodeType
+
+    val values = findValues
+  }
 
   sealed trait ValidationStatus
 
   final case object Valid extends ValidationStatus
-  final case object MempoolValid extends ValidationStatus
-  final case object Unknown extends ValidationStatus
-  final case object DoubleSpend extends ValidationStatus
 
+  final case object MempoolValid extends ValidationStatus
+
+  final case object Unknown extends ValidationStatus
+
+  final case object DoubleSpend extends ValidationStatus
 
   sealed trait ConfigUpdate
 
@@ -57,506 +131,241 @@ object Schema {
   // I.e. equivalent to number of sat per btc
   val NormalizationFactor: Long = 1e8.toLong
 
-  case class BundleHashQueryResponse(hash: String, sheaf: Option[Sheaf], transactions: Seq[Transaction])
-
   case class SendToAddress(
-                            dst: String,
-                            amount: Long,
-                            normalized: Boolean = true
-                          ) {
+    dst: String,
+    amount: Long,
+    normalized: Boolean = true
+  ) {
+
     def amountActual: Long = if (normalized) amount * NormalizationFactor else amount
   }
 
   // TODO: We also need a hash pointer to represent the post-tx counter party signing data, add later
   // TX should still be accepted even if metadata is incorrect, it just serves to help validation rounds.
+
   case class AddressMetaData(
-                              address: String,
-                              balance: Long = 0L,
-                              lastValidTransactionHash: Option[String] = None,
-                              txHashPool: Seq[String] = Seq(),
-                              txHashOverflowPointer: Option[String] = None,
-                              oneTimeUse: Boolean = false,
-                              depth: Int = 0
-                            ) extends ProductHash {
+    address: String,
+    balance: Long = 0L,
+    lastValidTransactionHash: Option[String] = None,
+    txHashPool: Seq[String] = Seq(),
+    txHashOverflowPointer: Option[String] = None,
+    oneTimeUse: Boolean = false,
+    depth: Int = 0
+  ) extends Signable {
+
     def normalizedBalance: Long = balance / NormalizationFactor
   }
 
-  sealed trait Fiber
+  /** Our basic set of allowed edge hash types */
+  sealed trait EdgeHashType extends EnumEntry
 
-  case class TransactionData(
-                     src: String,
-                     dst: String,
-                     amount: Long,
-                     salt: Long = Random.nextLong() // To ensure hash uniqueness.
-                   ) extends ProductHash with GossipMessage {
-    def hashType = "TransactionData"
-    def inverseAmount: Long = -1*amount
-    def normalizedAmount: Long = amount / NormalizationFactor
-    def pretty: String = s"TX: $short FROM: ${src.slice(0, 8)} " +
-      s"TO: ${dst.slice(0, 8)} " +
-      s"AMOUNT: $normalizedAmount"
+  object EdgeHashType extends Enum[EdgeHashType] with CirceEnum[EdgeHashType] {
 
-    def srcLedgerBalance(ledger: TrieMap[String, Long]): Long = {
-      ledger.getOrElse(src, 0)
-    }
+    case object AddressHash extends EdgeHashType
+    case object CheckpointDataHash extends EdgeHashType
+    case object CheckpointHash extends EdgeHashType
+    case object TransactionDataHash extends EdgeHashType
+    case object TransactionHash extends EdgeHashType
+    case object ValidationHash extends EdgeHashType
+    case object BundleDataHash extends EdgeHashType
+    case object ChannelMessageDataHash extends EdgeHashType
 
-    def ledgerValid(ledger: TrieMap[String, Long]): Boolean = {
-      srcLedgerBalance(ledger) >= amount
-    }
-
-    def updateLedger(ledger: TrieMap[String, Long]): Unit = {
-      if (ledger.contains(src)) ledger(src) = ledger(src) - amount
-
-      if (ledger.contains(dst)) ledger(dst) = ledger(dst) + amount
-      else ledger(dst) = amount
-    }
-
-
-  }
-  case class Transaction(
-                 txData: Signed[TransactionData]
-               ) extends Fiber with GossipMessage with ProductHash with RemoteMessage {
-    def valid: Boolean = txData.valid
+    val values = findValues
   }
 
-  sealed trait GossipMessage
+  case class BundleEdgeData(rank: Double, hashes: Seq[String])
 
-  // Participants are notarized via signatures.
-  final case class BundleBlock(
-                                parentHash: String,
-                                height: Long,
-                                txHash: Seq[String]
-                              ) extends ProductHash with Fiber
+  /**
+    * Wrapper for encapsulating a typed hash reference
+    *
+    * @param hashReference : String of hashed value or reference to be signed
+    * @param hashType : Strictly typed from set of allowed edge formats
+    */ // baseHash Temporary to debug heights missing
+  case class TypedEdgeHash(
+    hashReference: String,
+    hashType: EdgeHashType,
+    baseHash: Option[String] = None
+  )
 
-  final case class BundleHash(hash: String) extends Fiber
-  final case class TransactionHash(txHash: String) extends Fiber
-  final case class ParentBundleHash(pbHash: String) extends Fiber
+  /**
+    * Basic edge format for linking two hashes with an optional piece of data attached. Similar to GraphX format.
+    * Left is topologically ordered before right
+    *
+    * @param parents: HyperEdge parent references
+    * @param data : Optional hash reference to attached information
+    */
+  case class ObservationEdge( // TODO: Consider renaming to ObservationHyperEdge or leave as is?
+                             parents: Seq[TypedEdgeHash],
+                             data: TypedEdgeHash)
+      extends Signable {
+    override def getEncoding = runLengthEncoding(parents.map(_.hashReference) ++ Seq(data.hashReference): _*)
+  }
 
-  // TODO: Make another bundle data with additional metadata for depth etc.
-  final case class BundleData(bundles: Seq[Fiber]) extends ProductHash
+  /**
+    * Encapsulation for all witness information about a given observation edge.
+    *
+    * @param signatureBatch : Collection of validation signatures about the edge.
+    */
+  case class SignedObservationEdge(signatureBatch: SignatureBatch) extends Signable {
 
-  case class RequestBundleData(hash: String) extends GossipMessage
-  case class HashRequest(hash: String) extends GossipMessage
-  case class BatchHashRequest(hashes: Set[String]) extends GossipMessage
+    def withSignatureFrom(keyPair: KeyPair): SignedObservationEdge =
+      this.copy(signatureBatch = signatureBatch.withSignatureFrom(keyPair))
 
-  case class BatchBundleHashRequest(hashes: Set[String]) extends GossipMessage with RemoteMessage
-  case class BatchTXHashRequest(hashes: Set[String]) extends GossipMessage with RemoteMessage
+    def withSignature(hs: HashSignature): SignedObservationEdge =
+      this.copy(signatureBatch = signatureBatch.withSignature(hs))
 
-  case class UnknownParentHashSyncInfo(
-                                        firstRequestTime: Long,
-                                        lastRequestTime: Long,
-                                        numRequests: Int
-                                      )
+    def plus(other: SignatureBatch): SignedObservationEdge =
+      this.copy(signatureBatch = signatureBatch.plus(other))
 
-  // Order is like: TransactionData -> TX -> CheckpointBlock -> ObservationEdge -> SignedObservationEdge
+    def plus(other: SignedObservationEdge): SignedObservationEdge =
+      this.copy(signatureBatch = signatureBatch.plus(other.signatureBatch))
 
-  case class TX(signatureBatch: SignatureBatch) extends ProductHash
+    def baseHash: String = signatureBatch.hash
 
-  case class CheckpointBlock(transactions: Set[String]) extends ProductHash
+    override def hash = signatureBatch.hash
 
-  case class ObservationEdge(left: String, right: String) extends ProductHash
+  }
 
-  case class SignedObservationEdge(signatureBatch: SignatureBatch) extends ProductHash
+  /**
+    * Holder for ledger update information about a transaction
+    *
+    * @param amount : Quantity to be transferred
+    * @param salt : Ensure hash uniqueness
+    */
+  case class TransactionEdgeData(
+    amount: Long,
+    lastTxRef: LastTransactionRef,
+    fee: Option[Long] = None,
+    salt: Long = Random.nextLong()
+  ) extends Signable {
 
-  case class EdgeCell(members: mutable.SortedSet[EdgeSheaf])
+    override def getEncoding = {
+      val args = Seq(
+        amount.toString,
+        lastTxRef.getEncoding,
+        fee.getOrElse(0L).toString,
+        salt.toString
+      )
+      runLengthEncoding(args: _*)
+    }
+  }
 
-  case class ResolvedTX(tx: TX, transactionData: TransactionData)
+  /**
+    * Collection of references to transaction hashes
+    *
+    * @param hashes : TX edge hashes
+    */
+  case class CheckpointEdgeData(
+    hashes: Seq[String],
+    messageHashes: Seq[String] = Seq(),
+    observationsHashes: Seq[String]
+  ) extends Signable
 
-  case class ResolvedEdge(edge: ObservationEdge, signed: SignedObservationEdge)
+  case class CheckpointEdge(edge: Edge[CheckpointEdgeData]) {
 
-  case class EdgeSheaf(
-                        signedObservationEdge: SignedObservationEdge,
-                        parent: String,
-                        height: Long,
-                        depth: Int,
-                        score: Double
-                      )
+    def plus(other: CheckpointEdge) = this.copy(edge = edge.plus(other.edge))
+  }
 
-  case class AddressCache(balance: Long, reputation: Option[Double] = None)
+  case class Address(address: String) extends Signable {
 
+    override def hash: String = address
+  }
 
-  case class ResolvedTipObservation(
-                                     resolvedTX: Set[ResolvedTX],
-                                     checkpointBlock: CheckpointBlock,
-                                     observationEdge: ObservationEdge,
-                                     signedObservationEdge: SignedObservationEdge
-                               ) {
-    def store(db: ActorRef): Unit = {
-        resolvedTX.foreach { rt =>
-          rt.tx.put(db)
-          rt.transactionData.put(db)
-        }
-        checkpointBlock.put(db)
-        observationEdge.put(db)
-        signedObservationEdge.put(db)
-      }
+  case class AddressCacheData(
+    balance: Long,
+    memPoolBalance: Long,
+    reputation: Option[Double] = None,
+    ancestorBalances: Map[String, Long] = Map(),
+    ancestorReputations: Map[String, Long] = Map(),
+    //    recentTransactions: Seq[String] = Seq(),
+    balanceByLatestSnapshot: Long = 0L,
+    rewardsBalance: Long = 0L
+  ) {
+
+    def plus(previous: AddressCacheData): AddressCacheData =
+      this.copy(
+        ancestorBalances =
+          ancestorBalances ++ previous.ancestorBalances
+            .filterKeys(k => !ancestorBalances.contains(k)),
+        ancestorReputations =
+          ancestorReputations ++ previous.ancestorReputations.filterKeys(
+            k => !ancestorReputations.contains(k)
+          )
+        //recentTransactions =
+        //  recentTransactions ++ previous.recentTransactions.filter(k => !recentTransactions.contains(k))
+      )
+
+  }
+
+  // Instead of one balance we need a Map from soe hash to balance and reputation
+  // These values should be removed automatically by eviction
+  // We can maintain some kind of automatic LRU cache for keeping track of what we want to remove
+  // override evict method, and clean up data.
+  // We should also mark a given balance / rep as the 'primary' one.
+
+  case class Height(min: Long, max: Long) extends Ordered[Height] {
+    override def compare(that: Height): Int = min.compare(that.min)
+  }
+
+  case class CommonMetadata(
+    valid: Boolean = true,
+    inDAG: Boolean = false,
+    resolved: Boolean = true,
+    resolutionInProgress: Boolean = false,
+    inMemPool: Boolean = false,
+    lastResolveAttempt: Option[Long] = None,
+    rxTime: Long = System.currentTimeMillis() // TODO: Unify common metadata like this
+  )
+
+  // TODO: Separate cache with metadata vs what is stored in snapshot.
+
+  case class CheckpointCacheMetadata(
+    checkpointBlock: CheckpointBlockMetadata,
+    children: Int = 0,
+    height: Option[Height] = None
+  )
+
+  object CheckpointCache {
+    implicit val checkpointCacheOrdering: Ordering[CheckpointCache] =
+      Ordering.by[CheckpointCache, Long](_.height.fold(0L)(_.min))
+  }
+  case class CheckpointCache(
+    checkpointBlock: CheckpointBlock,
+    children: Int = 0,
+    height: Option[Height] = None // TODO: Check if Option if needed
+  ) {
+    /*
+
+    def plus(previous: CheckpointCacheData): CheckpointCacheData = {
+      this.copy(
+        lastResolveAttempt = lastResolveAttempt.map{t => Some(t)}.getOrElse(previous.lastResolveAttempt),
+        rxTime = previous.rxTime
+      )
+    }
+   */
+
   }
 
   case class PeerIPData(canonicalHostName: String, port: Option[Int])
 
+  case class ValidPeerIPData(canonicalHostName: String, port: Int)
+
   case class GenesisObservation(
-                               genesis: ResolvedTipObservation,
-                               initialDistribution: ResolvedTipObservation
-                               )
+    genesis: CheckpointBlock,
+    initialDistribution: CheckpointBlock,
+    initialDistribution2: CheckpointBlock
+  ) {
 
-
-
- // case class UnresolvedEdge(edge: )
-
-  // TODO: Change options to ResolvedBundleMetaData
-
-
-  /**
-    * Local neighborhood data about a bundle
-    * @param bundle : The raw bundle as embedded in the chain
-    * @param height : Main Chain height
-    * @param reputations : Raw heuristic score calculated from previous parent bundle
-    * @param totalScore : Total score of entire chain including this bundle
-    * @param rxTime : Local node receipt time
-    * @param transactionsResolved : Whether or not the transaction hashes have been resolved.
-    */
-  case class Sheaf(
-                             bundle: Bundle,
-                             height: Option[Int] = None,
-                             reputations: Map[String, Long] = Map(),
-                             totalScore: Option[Double] = None,
-                             rxTime: Long = System.currentTimeMillis(),
-                             transactionsResolved: Boolean = false,
-                             parent: Option[Bundle] = None,
-                             child: Option[Bundle] = None,
-                             pendingChildren: Option[Seq[Bundle]] = None,
-                             neighbors: Option[Seq[Sheaf]] = None
-                           ) {
-    def safeBundle = Option(bundle)
-    def isResolved: Boolean = reputations.nonEmpty && transactionsResolved && height.nonEmpty && totalScore.nonEmpty
-    def cellKey: CellKey = CellKey(bundle.extractParentBundleHash.pbHash, bundle.maxStackDepth, height.getOrElse(0))
-  }
-
-  case class CellKey(hashPointer: String, depth: Int, height: Int)
-
-  case class Cell(members: SortedSet[Sheaf])
-
-
-  final case class PeerSyncHeartbeat(
-                                      maxBundleMeta: Sheaf,
-                                      validLedger: Map[String, Long],
-                                      id: Id
-                                    ) extends GossipMessage with RemoteMessage {
-    def safeMaxBundle = Option(maxBundle)
-    def maxBundle: Bundle = maxBundleMeta.bundle
-  }
-
-  final case class Bundle(
-                           bundleData: Signed[BundleData]
-                         ) extends ProductHash with Fiber with GossipMessage
-    with RemoteMessage {
-
-
-    def extractTXHash: Set[TransactionHash] = {
-      def process(s: Signed[BundleData]): Set[TransactionHash] = {
-        val bd = s.data.bundles
-        val depths = bd.map {
-          case b2: Bundle =>
-            process(b2.bundleData)
-          case h: TransactionHash => Set(h)
-          case _ => Set[TransactionHash]()
-        }
-        if (depths.nonEmpty) {
-          depths.reduce( (s1: Set[TransactionHash], s2: Set[TransactionHash]) => s1 ++ s2)
-        } else {
-          Set[TransactionHash]()
-        }
-      }
-      process(bundleData)
-    }
-
-    val bundleNumber: Long = 0L //Random.nextLong()
-
-    /*
-        def extractTreeVisual: TreeVisual = {
-          val parentHash = extractParentBundleHash.hash.slice(0, 5)
-          def process(s: Signed[BundleData], parent: String): Seq[TreeVisual] = {
-            val bd = s.data.bundles
-            val depths = bd.map {
-              case tx: TX =>
-                TreeVisual(s"TX: ${tx.short} amount: ${tx.tx.data.normalizedAmount}", parent, Seq())
-              case b2: Bundle =>
-                val name = s"Bundle: ${b2.short} numTX: ${b2.extractTX.size}"
-                val children = process(b2.bundleData, name)
-                TreeVisual(name, parent, children)
-              case _ => Seq()
-            }
-            depths
-          }.asInstanceOf[Seq[TreeVisual]]
-          val parentName = s"Bundle: $short numTX: ${extractTX.size} node: ${bundleData.id.short} parent: $parentHash"
-          val children = process(bundleData, parentName)
-          TreeVisual(parentName, "null", children)
-        }
-    */
-
-    def extractParentBundleHash: ParentBundleHash = {
-      def process(s: Signed[BundleData]): ParentBundleHash = {
-        val bd = s.data.bundles
-        val depths = bd.collectFirst{
-          case b2: Bundle =>
-            process(b2.bundleData)
-          case bh: ParentBundleHash => bh
-        }
-        depths.get
-      }
-      process(bundleData)
-    }
-
-    def extractBundleHashId: (BundleHash, Id) = {
-      def process(s: Signed[BundleData]): (BundleHash, Id) = {
-        val bd = s.data.bundles
-        val depths = bd.collectFirst{
-          case b2: Bundle =>
-            process(b2.bundleData)
-          case bh: BundleHash => bh -> s.id
-        }.get
-        depths
-      }
-      process(bundleData)
-    }
-
-    def extractSubBundlesMinSize(minSize: Int = 2) = {
-      extractSubBundles.filter{_.maxStackDepth >= minSize}
-    }
-
-    def extractSubBundleHashes: Set[String] = {
-      def process(s: Signed[BundleData]): Set[String] = {
-        val bd = s.data.bundles
-        val depths = bd.map {
-          case b2: Bundle =>
-            Set(b2.hash) ++ process(b2.bundleData)
-          case _ => Set[String]()
-        }
-        depths.reduce(_ ++ _)
-      }
-      process(bundleData)
-    }
-
-    def extractSubBundles: Set[Bundle] = {
-      def process(s: Signed[BundleData]): Set[Bundle] = {
-        val bd = s.data.bundles
-        val depths = bd.map {
-          case b2: Bundle =>
-            Set(b2) ++ process(b2.bundleData)
-          case _ => Set[Bundle]()
-        }
-        depths.reduce(_ ++ _)
-      }
-      process(bundleData)
-    }
-    /*
-        def extractTX: Set[TX] = {
-          def process(s: Signed[BundleData]): Set[TX] = {
-            val bd = s.data.bundles
-            val depths = bd.map {
-              case b2: Bundle =>
-                process(b2.bundleData)
-              case tx: TX => Set(tx)
-              case _ => Set[TX]()
-            }
-            if (depths.nonEmpty) {
-              depths.reduce(_ ++ _)
-            } else {
-              Set()
-            }
-          }
-          process(bundleData)
-        }
-    */
-    // Copy this to temp val on class so as not to re-calculate
-    def extractIds: Set[Id] = {
-      def process(s: Signed[BundleData]): Set[Id] = {
-        val bd = s.data.bundles
-        val depths = bd.map {
-          case b2: Bundle =>
-            b2.bundleData.encodedPublicKeys.headOption.map{Id}.toSet ++ process(b2.bundleData)
-          case _ => Set[Id]()
-        }
-        depths.reduce(_ ++ _) ++ s.encodedPublicKeys.headOption.map{Id}.toSet
-      }
-      process(bundleData)
-    }
-
-    def maxStackDepth: Int = {
-      def process(s: Signed[BundleData]): Int = {
-        val bd = s.data.bundles
-        val depths = bd.map {
-          case b2: Bundle =>
-            process(b2.bundleData) + 1
-          case _ => 0
-        }
-        depths.max
-      }
-      process(bundleData) + 1
-    }
-
-    def totalNumEvents: Int = {
-      def process(s: Signed[BundleData]): Int = {
-        val bd = s.data.bundles
-        val depths = bd.map {
-          case b2: Bundle =>
-            process(b2.bundleData) + 1
-          case _ => 1
-        }
-        depths.sum
-      }
-      process(bundleData) + 1
-    }
-
-    def roundHash: String = {
-      bundleNumber.toString
-    }
+    def notGenesisTips(tips: Seq[CheckpointBlock]): Boolean =
+      !tips.contains(initialDistribution) && !tips.contains(initialDistribution2)
 
   }
 
-  final case class Gossip[T <: ProductHash](event: Signed[T]) extends ProductHash with RemoteMessage
-    with Fiber
-    with GossipMessage {
-    def iter: Seq[Signed[_ >: T <: ProductHash]] = {
-      def process[Q <: ProductHash](s: Signed[Q]): Seq[Signed[ProductHash]] = {
-        s.data match {
-          case Gossip(g) =>
-            val res = process(g)
-            res :+ g
-          case _ => Seq()
-        }
-      }
-      process(event) :+ event
-    }
-    def stackDepth: Int = {
-      def process[Q <: ProductHash](s: Signed[Q]): Int = {
-        s.data match {
-          case Gossip(g) =>
-            process(g) + 1
-          case _ => 0
-        }
-      }
-      process(event) + 1
-    }
+  @deprecated("Needs to be removed after peer manager changes", "january")
+  case class InternalHeartbeat(round: Long = 0L)
 
-  }
+  case class MetricsResult(metrics: Map[String, String])
 
-  // TODO: Move other messages here.
-  sealed trait InternalCommand
-
-  final case object GetPeersID extends InternalCommand
-  final case object GetPeersData extends InternalCommand
-  final case object GetUTXO extends InternalCommand
-  final case object GetValidTX extends InternalCommand
-  final case object GetMemPoolUTXO extends InternalCommand
-  final case object ToggleHeartbeat extends InternalCommand
-  final case object InternalHeartbeat extends InternalCommand
-  final case object InternalBundleHeartbeat extends InternalCommand
-
-  final case class ValidateTransaction(tx: Transaction) extends InternalCommand
-
-  trait DownloadMessage
-
-  case class DownloadRequest(time: Long = System.currentTimeMillis()) extends DownloadMessage with RemoteMessage
-  case class DownloadResponse(
-                               maxBundle: Bundle,
-                               genesisBundle: Bundle,
-                               genesisTX: Transaction
-                             ) extends DownloadMessage with RemoteMessage
-
-  final case class SyncData(validTX: Set[Transaction], memPoolTX: Set[Transaction]) extends GossipMessage with RemoteMessage
-
-  case class MissingTXProof(tx: Transaction, gossip: Seq[Gossip[ProductHash]]) extends GossipMessage with RemoteMessage
-
-  final case class RequestTXProof(txHash: String) extends GossipMessage with RemoteMessage
-
-  case class Metrics(metrics: Map[String, String])
-
-  final case class AddPeerFromLocal(address: InetSocketAddress) extends InternalCommand
-
-  case class Peers(peers: Seq[InetSocketAddress])
-
-  case class Id(encodedId: EncodedPublicKey) {
-    def short: String = id.toString.slice(15, 20)
-    def medium: String = id.toString.slice(15, 25).replaceAll(":", "")
-    def address: AddressMetaData = pubKeyToAddress(id)
-    def b58: String = Base58.encode(id.getEncoded)
-    def id: PublicKey = encodedId.toPublicKey
-  }
-
-  case class GetId()
-
-  case class GetBalance(account: PublicKey)
-
-  case class HandShake(
-                        originPeer: Signed[Peer],
-                        destination: InetSocketAddress,
-                        peers: Set[Signed[Peer]] = Set(),
-                        requestExternalAddressCheck: Boolean = false
-                      ) extends ProductHash
-
-  // These exist because type erasure messes up pattern matching on Signed[T] such that
-  // you need a wrapper case class like this
-  case class HandShakeMessage(handShake: Signed[HandShake]) extends RemoteMessage
-  case class HandShakeResponseMessage(handShakeResponse: Signed[HandShakeResponse]) extends RemoteMessage
-
-  case class HandShakeResponse(
-                                original: Signed[HandShake],
-                                response: HandShake,
-                                lastObservedExternalAddress: Option[InetSocketAddress] = None
-                              ) extends ProductHash with RemoteMessage
-
-  case class Peer(
-                   id: Id,
-                   externalAddress: Option[InetSocketAddress],
-                   apiAddress: Option[InetSocketAddress],
-                   remotes: Seq[InetSocketAddress] = Seq(),
-                   externalHostString: String
-                 ) extends ProductHash
-
-  case class LocalPeerData(
-                          // initialAddAddress: String
-                            //    mostRecentSignedPeer: Signed[Peer],
-                            //    updatedPeer: Peer,
-                            //    lastRXTime: Long = System.currentTimeMillis(),
-                            apiClient: APIClient
-                          )
-
-
-
-
-
-
-  // Experimental below
-
-  case class CounterPartyTXRequest(
-                                    dst: AddressMetaData,
-                                    counterParty: AddressMetaData,
-                                    counterPartyAccount: Option[EncodedPublicKey]
-                                  ) extends ProductHash
-
-
-  final case class ConflictDetectedData(detectedOn: Transaction, conflicts: Seq[Transaction]) extends ProductHash
-
-  final case class ConflictDetected(conflict: Signed[ConflictDetectedData]) extends ProductHash with GossipMessage
-
-  final case class VoteData(accept: Seq[Transaction], reject: Seq[Transaction]) extends ProductHash {
-    // used to determine what voting round we are talking about
-    def voteRoundHash: String = {
-      accept.++(reject).sortBy(t => t.hashCode()).map(f => f.hash).mkString("-")
-    }
-  }
-
-  final case class VoteCandidate(tx: Transaction, gossip: Seq[Gossip[ProductHash]])
-
-  final case class VoteDataSimpler(accept: Seq[VoteCandidate], reject: Seq[VoteCandidate]) extends ProductHash
-
-  final case class Vote(vote: Signed[VoteData]) extends ProductHash with Fiber
-
-
-
-  case class TransactionSerialized(hash: String, sender: String, receiver: String, amount: Long, signers: Set[String])
   case class Node(address: String, host: String, port: Int)
-
 
 }

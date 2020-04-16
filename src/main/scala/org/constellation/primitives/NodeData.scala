@@ -1,60 +1,68 @@
 package org.constellation.primitives
 
-import java.io.File
 import java.net.InetSocketAddress
 import java.security.KeyPair
 
-import org.constellation.primitives.Schema._
-import org.constellation.util.Signed
+import better.files.File
+import com.typesafe.scalalogging.Logger
 import constellation._
-import org.constellation.LevelDB
+import org.constellation.ResourceInfo
+import org.constellation.domain.configuration.NodeConfig
+import org.constellation.keytool.KeyUtils
+import org.constellation.p2p.PeerRegistrationRequest
+import org.constellation.schema.Id
+import org.constellation.util.Metrics
 
-import scala.util.Try
+case class LocalNodeConfig(
+  externalIP: String
+)
 
 trait NodeData {
 
-  var sendRandomTXV2: Boolean = false
+  @volatile var nodeConfig: NodeConfig
 
-  var minGenesisDistrSize: Int = 3
+  var metrics: Metrics = _
+
+  val miscLogger = Logger("MiscLogger")
+
   @volatile var downloadMode: Boolean = true
   @volatile var downloadInProgress: Boolean = false
-  var generateRandomTX: Boolean = true
+  @volatile var generateRandomTX: Boolean = false
+  @volatile var formCheckpoints: Boolean = true
+  @volatile var simulateEndpointTimeout: Boolean = false
+  var heartbeatEnabled: Boolean = true
+
+  var remotes: Seq[InetSocketAddress] = Seq()
 
   var lastConfirmationUpdateTime: Long = System.currentTimeMillis()
 
-  @volatile implicit var keyPair: KeyPair = _
+  def keyPair: KeyPair = nodeConfig.primaryKeyPair
 
   def publicKeyHash: Int = keyPair.getPublic.hashCode()
-  def id: Id = Id(keyPair.getPublic.encoded)
-  def selfAddress: AddressMetaData = id.address
-  def selfAddressStr: String = selfAddress.address
 
-  @volatile var nodeState: NodeState = PendingDownload
+  def id: Id = keyPair.getPublic.toId
 
-  var externalHostString: String = "127.0.0.1"
-  @volatile var externalAddress: Option[InetSocketAddress] = None
-  @volatile var apiAddress: Option[InetSocketAddress] = None
-  @volatile var tcpAddress: Option[InetSocketAddress] = None
+  def selfAddressStr: String = id.address
 
-  var remotes: Seq[InetSocketAddress] = Seq()
-  def selfPeer: Signed[Peer] = Peer(id, externalAddress, apiAddress, remotes, externalHostString).signed()
-/*
+  val dummyAddress: String = KeyUtils.makeKeyPair().getPublic.toId.address
 
-  @volatile var db: LevelDB = _
+  def externalHostString: String = nodeConfig.hostName
 
-  def tmpDirId = new File("tmp", id.medium)
+  def externalPeerHTTPPort: Int = nodeConfig.peerHttpPort
 
-  def restartDB(): Unit = {
-    Try {
-      db.destroy()
-    }
-    db = new LevelDB(new File(tmpDirId, "db"))
-  }
-*/
+  def snapshotPath: String =
+    s"tmp/${id.medium}/snapshots"
 
-  def updateKeyPair(kp: KeyPair): Unit = {
-    keyPair = kp
-    //restartDB()
-  }
+  def snapshotInfoPath: String =
+    s"tmp/${id.medium}/snapshot_infos"
+
+  def genesisObservationPath: String =
+    s"tmp/${id.medium}/genesis"
+
+  def rewardsPath: String =
+    s"tmp/${id.medium}/eigen_trust"
+
+  def updateKeyPair(kp: KeyPair): Unit =
+    nodeConfig = nodeConfig.copy(primaryKeyPair = kp)
 
 }

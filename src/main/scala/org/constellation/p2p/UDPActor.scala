@@ -2,58 +2,64 @@ package org.constellation.p2p
 
 import java.net.InetSocketAddress
 import java.util.concurrent.TimeUnit
-
 import akka.actor.{Actor, ActorRef}
 import akka.io.{IO, Udp}
 import akka.util.{ByteString, Timeout}
-import com.twitter.chill.{KryoPool, ScalaKryoInstantiator}
-import org.constellation.consensus.Consensus.RemoteMessage
-
 import scala.collection.concurrent.TrieMap
-import scala.collection.mutable
-import scala.util.Random
-import org.constellation.serializer.KryoSerializer._
-import constellation._
-import org.constellation.Data
 
+import org.constellation.DAO
+import org.constellation.serializer.KryoSerializer._
+
+/**
+  * None of this code is used right now
+  * We will revisit it in the future as alternative to REST/TCP
+  */
 // Consider adding ID to all UDP messages? Possibly easier.
+
 case class UDPMessage(data: Any, remote: InetSocketAddress)
+
 case class GetUDPSocketRef()
-case class UDPSend[T <: RemoteMessage](data: T, remote: InetSocketAddress)
+
+case class UDPSend[T](data: T, remote: InetSocketAddress)
+
 case class RegisterNextActor(nextActor: ActorRef)
+
 case class GetSelfAddress()
+
 case class Ban(address: InetSocketAddress)
+
 case class GetBanList()
 
 case object GetPacketGroups
 
 // Need to catch alert messages to detect socket closure.
-class UDPActor(@volatile var nextActor: Option[ActorRef] = None,
-               port: Int = 16180,
-               bindInterface: String = "0.0.0.0",
-               dao: Option[Data] = None
-              ) extends Actor {
+
+class UDPActor(
+  @volatile var nextActor: Option[ActorRef] = None,
+  port: Int = 16180,
+  bindInterface: String = "0.0.0.0",
+  dao: DAO
+) extends Actor {
 
   import context.system
 
   private val address = new InetSocketAddress(bindInterface, port)
 
-  IO(Udp) ! Udp.Bind(self, address, List(
-    Udp.SO.ReceiveBufferSize(1024 * 1024 * 20),
-    Udp.SO.SendBufferSize(1024 * 1024 * 20),
-    Udp.SO.ReuseAddress.apply(true))
+  IO(Udp) ! Udp.Bind(
+    self,
+    address,
+    List(
+      Udp.SO.ReceiveBufferSize(1024 * 1024 * 20),
+      Udp.SO.SendBufferSize(1024 * 1024 * 20),
+      Udp.SO.ReuseAddress.apply(true)
+    )
   )
 
   @volatile var udpSocket: ActorRef = _
 
-  // TODO: save to disk
-  @volatile var bannedIPs: Seq[InetSocketAddress] = Seq.empty[InetSocketAddress]
-
   implicit val timeout: Timeout = Timeout(10, TimeUnit.SECONDS)
 
   private val packetGroups = TrieMap[Long, TrieMap[Int, SerializedUDPMessage]]()
-
-  import constellation._
 
   def receive: PartialFunction[Any, Unit] = {
     case Udp.Bound(_) =>
@@ -64,21 +70,17 @@ class UDPActor(@volatile var nextActor: Option[ActorRef] = None,
       nextActor = Some(next)
   }
 
-  def processMessage(d: Any, remote: InetSocketAddress): Unit = {
-    nextActor.foreach { n => n ! UDPMessage(d, remote) }
-  }
+  def processMessage(d: Any, remote: InetSocketAddress): Unit =
+    nextActor.foreach { n =>
+      n ! UDPMessage(d, remote)
+    }
 
   def ready(socket: ActorRef): Receive = {
 
     case GetPacketGroups => sender() ! packetGroups
 
     case Udp.Received(data, remote) =>
-
-      dao.foreach { d =>
-        d.udpPacketGroupSize = packetGroups.size
-      }
-
-      if (bannedIPs.contains(remote)) {
+      if (true) { //dao.bannedIPs.contains(remote)) {
         println(s"BANNED MESSAGE DETECTED FROM $remote")
       } else {
 
@@ -88,9 +90,7 @@ class UDPActor(@volatile var nextActor: Option[ActorRef] = None,
 
         val pg = serMsg.packetGroup
 
-        def updatePacketGroup(serMsg: SerializedUDPMessage, messages: TrieMap[Int, SerializedUDPMessage]): Unit = {
-
-      //    println("Update packet group")
+        def updatePacketGroup(serMsg: SerializedUDPMessage, messages: TrieMap[Int, SerializedUDPMessage]): Unit =
           // make sure this is not a duplicate packet first
           if (!messages.isDefinedAt(serMsg.packetGroupId)) {
 
@@ -100,8 +100,6 @@ class UDPActor(@volatile var nextActor: Option[ActorRef] = None,
 
               val message = deserializeGrouped(messages.values.toList)
 
-          //    println(s"Received BULK UDP message from $remote -- $message -- sending to $nextActor")
-
               processMessage(message, remote)
 
               packetGroups.remove(pg)
@@ -110,8 +108,6 @@ class UDPActor(@volatile var nextActor: Option[ActorRef] = None,
               packetGroups(pg) = messages += (serMsg.packetGroupId -> serMsg)
             }
           }
-
-        }
 
         packetGroups.get(pg) match {
 
@@ -125,19 +121,20 @@ class UDPActor(@volatile var nextActor: Option[ActorRef] = None,
       }
 
     case UDPSend(data, remote) =>
-     // println("UDP SEND IN ACTOR")
       val ser: Seq[SerializedUDPMessage] = serializeGrouped(data)
 
-      ser.foreach{ s: SerializedUDPMessage => {
-        val byteString = ByteString(serialize(s))
-        socket ! Udp.Send(byteString, remote)
-      }}
+      ser.foreach { s: SerializedUDPMessage =>
+        {
+          val byteString = ByteString(serialize(s))
+          socket ! Udp.Send(byteString, remote)
+        }
+      }
 
     case RegisterNextActor(next) => nextActor = Some(next)
 
-    case Ban(remote) => bannedIPs = {bannedIPs ++ Seq(remote)}.distinct
-
-    case GetBanList => sender() ! bannedIPs
+    case Ban(remote) => {
+      //  dao.bannedIPs = {dao.bannedIPs ++ Seq(remote)}.distinct
+    }
 
     case GetUDPSocketRef => sender() ! udpSocket
 
@@ -148,11 +145,8 @@ class UDPActor(@volatile var nextActor: Option[ActorRef] = None,
     case Udp.Unbound => context.stop(self)
 
   }
-
 }
 
 // Change packetGroup to UUID
-case class SerializedUDPMessage(data: ByteString,
-                                packetGroup: Long,
-                                packetGroupSize: Long,
-                                packetGroupId: Int) extends RemoteMessage
+
+case class SerializedUDPMessage(data: ByteString, packetGroup: Long, packetGroupSize: Long, packetGroupId: Int)
